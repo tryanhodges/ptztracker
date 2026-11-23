@@ -325,7 +325,7 @@ struct ControlPanelView: View {
             VStack(alignment: .leading, spacing: 8) {
                 deadZoneSlider("Dead zone width", value: $settings.deadZoneWidth)
                 deadZoneSlider("Dead zone height", value: $settings.deadZoneHeight)
-                Text("The head holds while the target’s center stays inside the dashed box.")
+                Text("Leaving the dashed box starts a correction. The head holds again once the target is near the crosshair.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }

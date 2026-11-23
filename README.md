@@ -90,7 +90,7 @@ The head holds if Vision loses the selected target. Click another outlined targe
 ## Tuning tips
 
 - **Framing** lets you click or drag in the live preview to place the crosshair where the tracked face or person should stay. You can also use the horizontal and vertical sliders. The app saves the position. **Reset to Center** restores the default.
-- **Dead zone width** and **Dead zone height** resize the dashed box independently. Each percentage is measured against the corresponding video dimension. The head holds while the target’s center is inside the box.
+- **Dead zone width** and **Dead zone height** resize the dashed box independently. Each percentage is measured against the corresponding video dimension. The head holds until the target’s center leaves the box, then recenters near the crosshair before holding again.
 - **Reaction speed**: lower it for smoother, slower corrections.
 - **Sensitivity**: raise it to ignore weak / false detections; lower it if the box drops out.
 - Use **Invert pan / tilt** if the head moves the wrong way relative to the picture.

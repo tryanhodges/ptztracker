@@ -10,6 +10,7 @@ final class TrackingController: ObservableObject {
     @Published var trackingEnabled = false {
         didSet {
             if !trackingEnabled {
+                recentering = false
                 Task { await stopHead() }
             }
         }
@@ -67,6 +68,7 @@ final class TrackingController: ObservableObject {
     private var lastTrackingMode: TrackingMode?
     private var targetRevision = 0
     private var processingFrame = false
+    private var recentering = false
 
     init(settings: AppSettings, camera: CameraCaptureService) {
         self.settings = settings
@@ -122,6 +124,7 @@ final class TrackingController: ObservableObject {
     }
 
     func clearPrimaryTarget() {
+        recentering = false
         targetRevision += 1
         primaryTargetSelected = false
         targetCandidates = []
@@ -209,6 +212,7 @@ final class TrackingController: ObservableObject {
         currentTarget = target
 
         guard trackingOn, trackingEnabled else {
+            recentering = false
             if currentMotion != .idle {
                 currentMotion = .idle
                 Task { await stopHead() }
@@ -216,17 +220,22 @@ final class TrackingController: ObservableObject {
             return
         }
 
-        let motion = target.map {
-            Self.computeMotion(
-                for: $0,
+        let motion: PTZMotion
+        if let target {
+            motion = Self.computeMotion(
+                for: target,
                 framingPoint: settings.framingPoint,
                 deadZoneWidth: settings.deadZoneWidth,
                 deadZoneHeight: settings.deadZoneHeight,
                 reactionSpeed: settings.reactionSpeed,
                 invertPan: settings.invertPan,
-                invertTilt: settings.invertTilt
+                invertTilt: settings.invertTilt,
+                recentering: &recentering
             )
-        } ?? .idle
+        } else {
+            recentering = false
+            motion = .idle
+        }
 
         if currentMotion != motion {
             currentMotion = motion
@@ -246,35 +255,44 @@ final class TrackingController: ObservableObject {
         deadZoneHeight: Double,
         reactionSpeed: Double,
         invertPan: Bool,
-        invertTilt: Bool
+        invertTilt: Bool,
+        recentering: inout Bool
     ) -> PTZMotion {
         let anchorY = 1 - framingPoint.y
         let dx = target.center.x - framingPoint.x
         let dy = target.center.y - anchorY
         let halfWidth = deadZoneWidth / 2
         let halfHeight = deadZoneHeight / 2
+        // Start at the outer box, then settle in a smaller box around the framing point.
+        if !recentering {
+            guard abs(dx) > halfWidth || abs(dy) > halfHeight else { return .idle }
+            recentering = true
+        }
+        let panTolerance = min(0.02, halfWidth / 2)
+        let tiltTolerance = min(0.02, halfHeight / 2)
 
         var panDir: PTZMotion.PanDirection = .stop
         var tiltDir: PTZMotion.TiltDirection = .stop
 
-        if abs(dx) > halfWidth {
+        if abs(dx) > panTolerance {
             let goingRight = dx > 0
             let panRight = invertPan ? !goingRight : goingRight
             panDir = panRight ? .right : .left
         }
 
-        if abs(dy) > halfHeight {
+        if abs(dy) > tiltTolerance {
             let goingUp = dy > 0
             let tiltUp = invertTilt ? !goingUp : goingUp
             tiltDir = tiltUp ? .up : .down
         }
 
         if panDir == .stop && tiltDir == .stop {
+            recentering = false
             return .idle
         }
 
-        let panMag = max(0, abs(dx) - halfWidth) / (0.5 - halfWidth)
-        let tiltMag = max(0, abs(dy) - halfHeight) / (0.5 - halfHeight)
+        let panMag = max(0, abs(dx) - panTolerance) / (0.5 - panTolerance)
+        let tiltMag = max(0, abs(dy) - tiltTolerance) / (0.5 - tiltTolerance)
         let panSpeed = speedByte(magnitude: panMag, reactionSpeed: reactionSpeed)
         let tiltSpeed = min(speedByte(magnitude: tiltMag, reactionSpeed: reactionSpeed), 0x14)
 
