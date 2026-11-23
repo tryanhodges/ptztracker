@@ -39,34 +39,50 @@ struct VideoPreviewView: NSViewRepresentable {
     }
 }
 
+struct DeckLinkPreviewView: NSViewRepresentable {
+    let layer: AVSampleBufferDisplayLayer
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        view.wantsLayer = true
+        view.layer = layer
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {}
+}
+
 struct TrackingOverlayView: View {
     let target: TrackedTarget?
-    let bufferZone: Double
+    let candidates: [TrackedTarget]
+    let deadZoneWidth: Double
+    let deadZoneHeight: Double
+    let framingPoint: CGPoint
     let motion: PTZMotion
     let trackingEnabled: Bool
 
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                // Dead-zone rectangle
-                let insetX = geo.size.width * bufferZone
-                let insetY = geo.size.height * bufferZone
+                let center = CGPoint(x: framingPoint.x * geo.size.width, y: framingPoint.y * geo.size.height)
                 RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(Color.white.opacity(0.28), style: StrokeStyle(lineWidth: 1, dash: [6, 4]))
-                    .frame(
-                        width: max(0, geo.size.width - insetX * 2),
-                        height: max(0, geo.size.height - insetY * 2)
-                    )
-                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
+                    .strokeBorder(Color.white.opacity(0.55), style: StrokeStyle(lineWidth: 1, dash: [6, 4]))
+                    .frame(width: geo.size.width * deadZoneWidth, height: geo.size.height * deadZoneHeight)
+                    .position(center)
 
-                // Crosshair
-                Path { path in
-                    path.move(to: CGPoint(x: geo.size.width / 2, y: geo.size.height * 0.42))
-                    path.addLine(to: CGPoint(x: geo.size.width / 2, y: geo.size.height * 0.58))
-                    path.move(to: CGPoint(x: geo.size.width * 0.46, y: geo.size.height / 2))
-                    path.addLine(to: CGPoint(x: geo.size.width * 0.54, y: geo.size.height / 2))
+                Image(systemName: "plus")
+                    .font(.system(size: 22, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .shadow(color: .black, radius: 2)
+                    .position(center)
+
+                ForEach(candidates.indices, id: \.self) { index in
+                    let rect = visionRectToView(candidates[index].boundingBox, in: geo.size)
+                    RoundedRectangle(cornerRadius: 3)
+                        .strokeBorder(Color.cyan, style: StrokeStyle(lineWidth: 2, dash: [5, 3]))
+                        .frame(width: rect.width, height: rect.height)
+                        .position(x: rect.midX, y: rect.midY)
                 }
-                .stroke(Color.white.opacity(0.45), lineWidth: 1)
 
                 if let target {
                     let rect = visionRectToView(target.boundingBox, in: geo.size)
@@ -104,6 +120,7 @@ struct TrackingOverlayView: View {
                 }
             }
         }
+        .clipped()
         .allowsHitTesting(false)
     }
 

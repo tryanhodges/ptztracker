@@ -30,12 +30,24 @@ final class VisionTrackingService {
             return nil
         }
 
-        let observation = VNDetectedObjectObservation(boundingBox: seeded.boundingBox)
+        lock(on: seeded)
+        return seeded
+    }
+
+    func lock(on target: TrackedTarget) {
+        let observation = VNDetectedObjectObservation(boundingBox: target.boundingBox)
         let tracker = VNTrackObjectRequest(detectedObjectObservation: observation)
         tracker.trackingLevel = .accurate
         activeTracker = tracker
         lostFrames = 0
-        return seeded
+    }
+
+    func followSelectedTarget(pixelBuffer: CVPixelBuffer, minConfidence: Float) -> TrackedTarget? {
+        guard let target = continueTracking(pixelBuffer: pixelBuffer, minConfidence: minConfidence) else {
+            reset()
+            return nil
+        }
+        return target
     }
 
     private func continueTracking(pixelBuffer: CVPixelBuffer, minConfidence: Float) -> TrackedTarget? {
@@ -74,42 +86,33 @@ final class VisionTrackingService {
         mode: TrackingMode,
         minConfidence: Float
     ) -> TrackedTarget? {
-        switch mode {
-        case .human:
-            return detectHuman(pixelBuffer: pixelBuffer, minConfidence: minConfidence)
-        case .face:
-            return detectFace(pixelBuffer: pixelBuffer, minConfidence: minConfidence)
+        candidates(pixelBuffer: pixelBuffer, mode: mode, minConfidence: minConfidence).max {
+            $0.boundingBox.area < $1.boundingBox.area
         }
     }
 
-    private func detectHuman(pixelBuffer: CVPixelBuffer, minConfidence: Float) -> TrackedTarget? {
-        let request = VNDetectHumanRectanglesRequest()
-        request.upperBodyOnly = false
+    func candidates(pixelBuffer: CVPixelBuffer, mode: TrackingMode, minConfidence: Float) -> [TrackedTarget] {
         do {
-            try sequenceHandler.perform([request], on: pixelBuffer)
-            let observations = (request.results ?? [])
+            let observations: [VNDetectedObjectObservation]
+            switch mode {
+            case .human:
+                let request = VNDetectHumanRectanglesRequest()
+                request.upperBodyOnly = false
+                try sequenceHandler.perform([request], on: pixelBuffer)
+                observations = request.results ?? []
+            case .face:
+                let request = VNDetectFaceRectanglesRequest()
+                try sequenceHandler.perform([request], on: pixelBuffer)
+                observations = request.results ?? []
+            }
+            return observations
                 .filter { $0.confidence >= minConfidence }
-                .sorted { $0.boundingBox.area > $1.boundingBox.area }
-            guard let best = observations.first else { return nil }
-            return TrackedTarget(boundingBox: best.boundingBox, confidence: best.confidence)
+                .map { TrackedTarget(boundingBox: $0.boundingBox, confidence: $0.confidence) }
         } catch {
-            return nil
+            return []
         }
     }
 
-    private func detectFace(pixelBuffer: CVPixelBuffer, minConfidence: Float) -> TrackedTarget? {
-        let request = VNDetectFaceRectanglesRequest()
-        do {
-            try sequenceHandler.perform([request], on: pixelBuffer)
-            let observations = (request.results ?? [])
-                .filter { $0.confidence >= minConfidence }
-                .sorted { $0.boundingBox.area > $1.boundingBox.area }
-            guard let best = observations.first else { return nil }
-            return TrackedTarget(boundingBox: best.boundingBox, confidence: best.confidence)
-        } catch {
-            return nil
-        }
-    }
 }
 
 private extension CGRect {

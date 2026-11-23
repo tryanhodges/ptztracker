@@ -117,6 +117,15 @@ actor ViscaClient {
         }
     }
 
+    func sendPreset(_ slot: UInt8, recall: Bool) async throws -> String {
+        guard isConnected else { throw ViscaError.notConnected }
+        let command: UInt8 = recall ? 0x02 : 0x01
+        let packet = wrapDVIP(Data([deviceAddress, 0x01, 0x04, 0x3F, command, slot, 0xFF]))
+        try await send(packet)
+        lastMotionKey = nil
+        return packet.map { String(format: "%02X", $0) }.joined(separator: " ")
+    }
+
     // MARK: - Packet building (matches companion-module-datavideo-visca)
 
     private func buildPanTilt(panSpeed: UInt8, tiltSpeed: UInt8, pan: UInt8, tilt: UInt8) -> Data {

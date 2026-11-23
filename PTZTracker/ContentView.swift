@@ -5,18 +5,54 @@ struct ContentView: View {
     @EnvironmentObject private var camera: CameraCaptureService
     @EnvironmentObject private var controller: TrackingController
 
+    private var trackingOverlay: some View {
+        TrackingOverlayView(
+            target: controller.currentTarget,
+            candidates: controller.targetCandidates,
+            deadZoneWidth: settings.deadZoneWidth,
+            deadZoneHeight: settings.deadZoneHeight,
+            framingPoint: settings.framingPoint,
+            motion: controller.currentMotion,
+            trackingEnabled: controller.trackingEnabled
+        )
+    }
+
     var body: some View {
         HSplitView {
             ZStack {
                 Color.black
                 if camera.isRunning {
-                    VideoPreviewView(session: camera.session)
-                    TrackingOverlayView(
-                        target: controller.currentTarget,
-                        bufferZone: settings.bufferZone,
-                        motion: controller.currentMotion,
-                        trackingEnabled: controller.trackingEnabled
-                    )
+                    ZStack {
+                        if camera.usingDeckLink {
+                            DeckLinkPreviewView(layer: camera.deckLinkPreview)
+                        } else {
+                            VideoPreviewView(session: camera.session)
+                        }
+                        trackingOverlay
+                        GeometryReader { geometry in
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .gesture(DragGesture(minimumDistance: 0).onChanged { drag in
+                                    guard !controller.manualTargetSelection || controller.primaryTargetSelected,
+                                          geometry.size.width > 0, geometry.size.height > 0 else { return }
+                                    settings.setFramingPoint(CGPoint(
+                                        x: drag.location.x / geometry.size.width,
+                                        y: drag.location.y / geometry.size.height
+                                    ))
+                                }.onEnded { drag in
+                                    guard controller.manualTargetSelection, !controller.primaryTargetSelected,
+                                          geometry.size.width > 0, geometry.size.height > 0,
+                                          abs(drag.translation.width) < 6, abs(drag.translation.height) < 6
+                                    else { return }
+                                    controller.selectPrimaryTarget(at: CGPoint(
+                                        x: drag.location.x / geometry.size.width,
+                                        y: drag.location.y / geometry.size.height
+                                    ))
+                                })
+                                .accessibilityHidden(true)
+                        }
+                    }
+                    .aspectRatio(camera.videoAspectRatio, contentMode: .fit)
                 } else {
                     VStack(spacing: 12) {
                         Image(systemName: "video.badge.ellipsis")

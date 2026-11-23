@@ -15,6 +15,8 @@ struct ControlPanelView: View {
                 Divider().opacity(0.35)
                 viscaSection
                 Divider().opacity(0.35)
+                presetSection
+                Divider().opacity(0.35)
                 tuningSection
                 Divider().opacity(0.35)
                 companionSection
@@ -44,9 +46,53 @@ struct ControlPanelView: View {
             }
             .pickerStyle(.segmented)
 
+            Toggle("Select Target", isOn: Binding(
+                get: { controller.manualTargetSelection },
+                set: { controller.setManualTargetSelection($0) }
+            ))
+
+            if controller.manualTargetSelection {
+                if controller.primaryTargetSelected {
+                    Button("Choose Another Target") { controller.clearPrimaryTarget() }
+                } else {
+                    Text("Click an outlined target in the preview.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             Text(targetSummary)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            HStack {
+                Text("Framing").fontWeight(.medium)
+                Spacer()
+                Button("Reset to Center") {
+                    settings.setFramingPoint(CGPoint(x: 0.5, y: 0.5))
+                }
+            }
+
+            Text("Click or drag in the preview to place the crosshair.")
+                .opacity(controller.manualTargetSelection && !controller.primaryTargetSelected ? 0 : 1)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            LabeledContent("Horizontal") {
+                Slider(value: Binding(
+                    get: { Double(settings.framingPoint.x) },
+                    set: { settings.setFramingPoint(CGPoint(x: $0, y: settings.framingPoint.y)) }
+                ), in: 0...1, step: 0.01)
+                .accessibilityLabel("Horizontal framing position")
+            }
+
+            LabeledContent("Vertical") {
+                Slider(value: Binding(
+                    get: { Double(settings.framingPoint.y) },
+                    set: { settings.setFramingPoint(CGPoint(x: settings.framingPoint.x, y: $0)) }
+                ), in: 0...1, step: 0.01)
+                .accessibilityLabel("Vertical framing position")
+            }
         }
     }
 
@@ -71,6 +117,18 @@ struct ControlPanelView: View {
                     Task { await camera.requestAccessAndStart(deviceID: settings.selectedDeviceID) }
                 }
                 .keyboardShortcut("r", modifiers: [.command])
+            }
+
+            if camera.isRunning {
+                Text(camera.receivedVideoFrame ? "Video frames received" : "Waiting for video frames…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let format = camera.captureFormatDescription, camera.isRunning {
+                Text(format)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             if camera.authorizationDenied {
@@ -130,6 +188,63 @@ struct ControlPanelView: View {
         }
     }
 
+    private var presetSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Position Memory")
+                .font(.headline)
+
+            HStack(spacing: 5) {
+                ForEach(1...5, id: \.self) { number in
+                    let slot = UInt8(number)
+                    let name = number == 5 ? "Center" : "\(number)"
+                    let markedSaved = settings.isPresetMarkedSaved(slot)
+                    Button {
+                        Task { await controller.recallPreset(slot) }
+                    } label: {
+                        Text(name)
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(markedSaved ? Color.white : Color.primary)
+                            .frame(maxWidth: .infinity, minHeight: 28)
+                            .background(
+                                markedSaved ? Color(red: 0.04, green: 0.33, blue: 0.80) : Color.secondary.opacity(0.18),
+                                in: RoundedRectangle(cornerRadius: 6)
+                            )
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(number == 5 ? "Recall Center" : "Recall Memory \(number)")
+                    .accessibilityValue(markedSaved ? "Save sent" : "No save recorded")
+                }
+            }
+            .disabled(controller.trackingEnabled || controller.sendingPreset)
+
+            Text(controller.trackingEnabled ? "Turn tracking off to recall a position."
+                 : "Blue marks slots saved through PTZ Tracker.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if let message = controller.presetMessage {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func deadZoneSlider(_ title: String, value: Binding<Double>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(value.wrappedValue, format: .percent.precision(.fractionLength(0)))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            Slider(value: value, in: AppSettings.deadZoneSizeRange)
+                .accessibilityLabel(title)
+        }
+    }
+
     private var tuningSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Response")
@@ -149,16 +264,10 @@ struct ControlPanelView: View {
                     .foregroundStyle(.secondary)
             }
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text("Buffer (dead zone)")
-                    Spacer()
-                    Text(settings.bufferZone, format: .percent.precision(.fractionLength(0)))
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                }
-                Slider(value: $settings.bufferZone, in: 0.02...0.4)
-                Text("Ignore subject drift inside this center region.")
+            VStack(alignment: .leading, spacing: 8) {
+                deadZoneSlider("Dead zone width", value: $settings.deadZoneWidth)
+                deadZoneSlider("Dead zone height", value: $settings.deadZoneHeight)
+                Text("The head holds while the target’s center stays inside the dashed box.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }

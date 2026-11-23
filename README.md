@@ -13,16 +13,22 @@ Requires **macOS 14+** and **Xcode 15+**.
 5. In the sidebar:
    - Choose your Thunderbolt capture device and click **Start Camera**.
    - Confirm VISCA IP / port (defaults: `192.168.1.188` / `5002`).
-   - Tune **Reaction speed**, **Buffer (dead zone)**, and **Sensitivity**.
+   - Tune **Reaction speed**, **Dead zone width**, **Dead zone height**, and **Sensitivity**.
    - Flip **Tracking On** when you want the head to move.
 
 Shortcut: **⌘T** toggles tracking.
+
+## Blackmagic UltraStudio HD Mini
+
+PTZ Tracker uses DeckLink for the UltraStudio HD Mini with a **1080i60 SDI** feed (60.00 fields per second). Select SDI in Blackmagic Desktop Video Setup and close other apps using the input before starting capture. The Video Input section shows the capture mode and whether frames are arriving.
+
+Install Blackmagic Desktop Video on the Mac that runs the app. To build with DeckLink support, extract Blackmagic DeckLink SDK 16.0 to `~/Downloads/Blackmagic DeckLink SDK 16.0` or point the Xcode build setting `DECKLINK_SDK_INCLUDE` to the SDK’s `Mac/include` folder. The project also builds without the SDK for AVFoundation inputs.
 
 ## What you see
 
 - Live video from the selected input
 - Amber box + confidence on the tracked subject (when tracking is on)
-- Dashed dead-zone around frame center (the buffer)
+- Movable crosshair and dashed dead zone for composing the shot
 - Current pan/tilt motion chip and last DVIP hex packet
 
 ## Datavideo protocol
@@ -54,9 +60,31 @@ The app listens for Generic HTTP requests (default port **18787**). The sidebar 
 
 Allow incoming connections if macOS Firewall prompts for **PTZ Tracker**.
 
+## Save and recall head positions
+
+Use the existing **Generic HTTP Requests** connection in Companion. With tracking off, move the head manually and wait for it to stop. Add a **POST** action with the appropriate URI and leave the request body empty.
+
+| Slot | Save the current position | Recall the saved position |
+| --- | --- | --- |
+| 1–4 | `presets/1/save` through `presets/4/save` | `presets/1/recall` through `presets/4/recall` |
+| 5 (Center) | `presets/5/save` | `presets/5/recall` |
+
+To use one button per slot in Companion, add a duration group of 1500 ms set to run on release. Put the recall action under **Short release**, put the save action in the duration group, and leave **Press actions** empty.
+
+The app’s **Position Memory** section also recalls slots 1–4 and Center. Blue indicates that PTZ Tracker sent a save command for that slot and head. The slots use the head’s native preset memory. Saving replaces the position in that slot. Leave tracking off while recalling a position. An HTTP 202 response confirms the app sent the command over TCP.
+
+## Select a primary target
+
+1. Choose **Face** or **Person**, then enable **Select Target**.
+2. In the live preview, click the outline of the subject you want to follow.
+3. Turn **Tracking On** when you want the head to move.
+
+The head holds if Vision loses the selected target. Click another outlined target, use **Choose Another Target** to replace a current selection, or turn **Select Target** off to resume automatic selection. The framing sliders remain available while choosing a target.
+
 ## Tuning tips
 
-- **Buffer**: raise it if the head hunts while the subject is roughly centered.
+- **Framing** lets you click or drag in the live preview to place the crosshair where the tracked face or person should stay. You can also use the horizontal and vertical sliders. The app saves the position. **Reset to Center** restores the default.
+- **Dead zone width** and **Dead zone height** resize the dashed box independently. Each percentage is measured against the corresponding video dimension. The head holds while the target’s center is inside the box.
 - **Reaction speed**: lower it for smoother, slower corrections.
 - **Sensitivity**: raise it to ignore weak / false detections; lower it if the box drops out.
 - Use **Invert pan / tilt** if the head moves the wrong way relative to the picture.

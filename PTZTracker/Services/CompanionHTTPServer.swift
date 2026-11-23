@@ -3,11 +3,17 @@ import Network
 
 /// Minimal HTTP server for Bitfocus Companion Generic HTTP actions.
 final class CompanionHTTPServer {
+    enum PresetOperation: String {
+        case save
+        case recall
+    }
+
     enum Action {
         case status
         case on
         case off
         case toggle
+        case preset(UInt8, PresetOperation)
     }
 
     struct Response {
@@ -17,11 +23,11 @@ final class CompanionHTTPServer {
     }
 
     private let port: UInt16
-    private let handler: @MainActor (Action) -> Response
+    private let handler: @MainActor (Action) async -> Response
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "ptz.companion.http")
 
-    init(port: UInt16, handler: @escaping @MainActor (Action) -> Response) {
+    init(port: UInt16, handler: @escaping @MainActor (Action) async -> Response) {
         self.port = port
         self.handler = handler
     }
@@ -82,7 +88,7 @@ final class CompanionHTTPServer {
     }
 
     private func respond(to request: String, on connection: NWConnection) {
-        let firstLine = request.split(separator: "\r\n", maxSplits: 1).first.map(String.init) ?? ""
+        let firstLine = request.components(separatedBy: "\r\n").first ?? ""
         let parts = firstLine.split(separator: " ")
         let method = parts.count > 0 ? String(parts[0]).uppercased() : "GET"
         let path = parts.count > 1 ? String(parts[1]) : "/"
@@ -93,7 +99,8 @@ final class CompanionHTTPServer {
         }
 
         let action: Action?
-        switch normalizedPath(path) {
+        let route = normalizedPath(path)
+        switch route {
         case "/", "/status", "/tracking/status":
             action = .status
         case "/tracking/on", "/on":
@@ -103,7 +110,18 @@ final class CompanionHTTPServer {
         case "/tracking/toggle", "/toggle":
             action = .toggle
         default:
-            action = nil
+            let segments = route.split(separator: "/")
+            if segments.count == 3, segments[0] == "presets",
+               let slot = UInt8(segments[1]), (1...5).contains(slot),
+               let operation = PresetOperation(rawValue: String(segments[2])) {
+                guard method == "POST" else {
+                    send(Response(status: 405, body: "Use POST for preset commands."), on: connection)
+                    return
+                }
+                action = .preset(slot, operation)
+            } else {
+                action = nil
+            }
         }
 
         guard let action else {
@@ -113,13 +131,15 @@ final class CompanionHTTPServer {
             GET /tracking/on
             GET /tracking/off
             GET /tracking/toggle
+            POST /presets/{1-5}/save
+            POST /presets/{1-5}/recall
             """
             send(Response(status: 404, body: help), on: connection)
             return
         }
 
         Task { @MainActor in
-            let response = self.handler(action)
+            let response = await self.handler(action)
             self.send(response, on: connection)
         }
     }
@@ -140,19 +160,22 @@ final class CompanionHTTPServer {
         let reason: String
         switch response.status {
         case 200: reason = "OK"
+        case 202: reason = "Accepted"
+        case 409: reason = "Conflict"
+        case 503: reason = "Service Unavailable"
         case 404: reason = "Not Found"
         case 405: reason = "Method Not Allowed"
         default: reason = "Error"
         }
-        let header = """
-        HTTP/1.1 \(response.status) \(reason)\r
-        Content-Type: \(response.contentType); charset=utf-8\r
-        Content-Length: \(bodyData.count)\r
-        Connection: close\r
-        Access-Control-Allow-Origin: *\r
-        \r
-
-        """
+        let header = [
+            "HTTP/1.1 \(response.status) \(reason)",
+            "Content-Type: \(response.contentType); charset=utf-8",
+            "Content-Length: \(bodyData.count)",
+            "Connection: close",
+            "Access-Control-Allow-Origin: *",
+            "",
+            ""
+        ].joined(separator: "\r\n")
         var payload = Data(header.utf8)
         payload.append(bodyData)
         connection.send(content: payload, completion: .contentProcessed { _ in
