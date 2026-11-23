@@ -190,8 +190,20 @@ struct ControlPanelView: View {
 
     private var presetSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Position Memory")
-                .font(.headline)
+            HStack {
+                Text("Position Memory").font(.headline)
+                Spacer()
+                Button("Clear All") { controller.confirmingPresetClear = true }
+                    .disabled(controller.trackingEnabled || controller.sendingPreset)
+                    .confirmationDialog("Clear all position memories?", isPresented: $controller.confirmingPresetClear) {
+                        Button("Clear All", role: .destructive) {
+                            Task { await controller.clearAllPresets() }
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("This resets memories 1–4 and Center on the connected head.")
+                    }
+            }
 
             HStack(spacing: 5) {
                 ForEach(1...5, id: \.self) { number in

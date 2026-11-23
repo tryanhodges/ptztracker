@@ -92,6 +92,12 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    func unmarkPresetSaved(_ slot: UInt8, for head: String) {
+        guard var slots = savedPresetSlotsByHead[head] else { return }
+        slots.removeAll { $0 == Int(slot) }
+        savedPresetSlotsByHead[head] = slots.isEmpty ? nil : slots
+    }
+
     private let defaults = UserDefaults.standard
 
     private enum Keys {

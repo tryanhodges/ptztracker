@@ -26,10 +26,35 @@ final class TrackingController: ObservableObject {
     let settings: AppSettings
     let camera: CameraCaptureService
     let visca = ViscaClient()
+    func clearAllPresets() async {
+        guard !trackingEnabled, currentMotion == .idle, !sendingPreset else { return }
+        let head = settings.presetHead
+        guard configuredPresetHead == head else {
+            presetMessage = "Reconnect the head before clearing presets."
+            return
+        }
+        sendingPreset = true
+        defer { sendingPreset = false }
+
+        var cleared = 0
+        for slot in UInt8(1)...UInt8(5) {
+            guard configuredPresetHead == head, !trackingEnabled else { break }
+            do {
+                connection.lastCommandHex = try await visca.resetPreset(slot)
+                settings.unmarkPresetSaved(slot, for: head)
+                cleared += 1
+            } catch {
+                break
+            }
+        }
+        presetMessage = "Reset commands sent for \(cleared) of 5 positions."
+    }
+
     private let visionQueue = DispatchQueue(label: "ptz.vision", qos: .userInitiated)
     private let vision = VisionTrackingService()
     private var companionServer: CompanionHTTPServer?
     @Published private(set) var sendingPreset = false
+    @Published var confirmingPresetClear = false
     @Published private(set) var presetMessage: String?
     private var configuredPresetHead: String?
 

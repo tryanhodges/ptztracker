@@ -118,8 +118,15 @@ actor ViscaClient {
     }
 
     func sendPreset(_ slot: UInt8, recall: Bool) async throws -> String {
+        return try await sendPresetCommand(slot, command: recall ? 0x02 : 0x01)
+    }
+
+    func resetPreset(_ slot: UInt8) async throws -> String {
+        try await sendPresetCommand(slot, command: 0x00)
+    }
+
+    private func sendPresetCommand(_ slot: UInt8, command: UInt8) async throws -> String {
         guard isConnected else { throw ViscaError.notConnected }
-        let command: UInt8 = recall ? 0x02 : 0x01
         let packet = wrapDVIP(Data([deviceAddress, 0x01, 0x04, 0x3F, command, slot, 0xFF]))
         try await send(packet)
         lastMotionKey = nil
