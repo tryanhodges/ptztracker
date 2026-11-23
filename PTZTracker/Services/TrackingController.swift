@@ -10,7 +10,7 @@ final class TrackingController: ObservableObject {
     @Published var trackingEnabled = false {
         didSet {
             if !trackingEnabled {
-                recentering = false
+                resetTargetMotion()
                 Task { await stopHead() }
             }
         }
@@ -69,6 +69,8 @@ final class TrackingController: ObservableObject {
     private var targetRevision = 0
     private var processingFrame = false
     private var recentering = false
+    private var lastTargetSample: (center: CGPoint, time: TimeInterval)?
+    private var targetVelocity = CGVector.zero
 
     init(settings: AppSettings, camera: CameraCaptureService) {
         self.settings = settings
@@ -123,8 +125,14 @@ final class TrackingController: ObservableObject {
         clearPrimaryTarget()
     }
 
-    func clearPrimaryTarget() {
+    private func resetTargetMotion() {
         recentering = false
+        lastTargetSample = nil
+        targetVelocity = .zero
+    }
+
+    func clearPrimaryTarget() {
+        resetTargetMotion()
         targetRevision += 1
         primaryTargetSelected = false
         targetCandidates = []
@@ -171,6 +179,7 @@ final class TrackingController: ObservableObject {
         let mode = settings.trackingMode
         let confidence = Float(settings.sensitivity)
         let trackingOn = trackingEnabled
+        let frameTime = ProcessInfo.processInfo.systemUptime
 
         if lastTrackingMode != mode {
             lastTrackingMode = mode
@@ -202,17 +211,17 @@ final class TrackingController: ObservableObject {
                       self.settings.ignoreZones == ignoreZones else { return }
                 if hasSelection, target == nil { self.primaryTargetSelected = false }
                 self.targetCandidates = candidates
-                self.applyFrameResult(target: target, trackingOn: trackingOn)
+                self.applyFrameResult(target: target, trackingOn: trackingOn, frameTime: frameTime)
             }
         }
     }
 
-    private func applyFrameResult(target: TrackedTarget?, trackingOn: Bool) {
+    private func applyFrameResult(target: TrackedTarget?, trackingOn: Bool, frameTime: TimeInterval) {
         framesProcessed += 1
         currentTarget = target
 
         guard trackingOn, trackingEnabled else {
-            recentering = false
+            resetTargetMotion()
             if currentMotion != .idle {
                 currentMotion = .idle
                 Task { await stopHead() }
@@ -222,6 +231,7 @@ final class TrackingController: ObservableObject {
 
         let motion: PTZMotion
         if let target {
+            updateTargetVelocity(center: target.center, frameTime: frameTime)
             motion = Self.computeMotion(
                 for: target,
                 framingPoint: settings.framingPoint,
@@ -230,10 +240,11 @@ final class TrackingController: ObservableObject {
                 reactionSpeed: settings.reactionSpeed,
                 invertPan: settings.invertPan,
                 invertTilt: settings.invertTilt,
+                velocity: targetVelocity,
                 recentering: &recentering
             )
         } else {
-            recentering = false
+            resetTargetMotion()
             motion = .idle
         }
 
@@ -247,6 +258,22 @@ final class TrackingController: ObservableObject {
         }
     }
 
+    private func updateTargetVelocity(center: CGPoint, frameTime: TimeInterval) {
+        defer { lastTargetSample = (center, frameTime) }
+        guard let previous = lastTargetSample else { return }
+        let elapsed = frameTime - previous.time
+        let dx = center.x - previous.center.x
+        let dy = center.y - previous.center.y
+        // Discard stale samples and large detection jumps before estimating drift.
+        guard elapsed > 0, elapsed <= 0.35, hypot(dx, dy) <= 0.22 else {
+            targetVelocity = .zero
+            return
+        }
+        let weight = 1 - exp(-elapsed / 0.12)
+        targetVelocity.dx += (dx / elapsed - targetVelocity.dx) * weight
+        targetVelocity.dy += (dy / elapsed - targetVelocity.dy) * weight
+    }
+
     /// Vision coords: origin bottom-left, x/y in 0…1.
     private nonisolated static func computeMotion(
         for target: TrackedTarget,
@@ -256,6 +283,7 @@ final class TrackingController: ObservableObject {
         reactionSpeed: Double,
         invertPan: Bool,
         invertTilt: Bool,
+        velocity: CGVector,
         recentering: inout Bool
     ) -> PTZMotion {
         let anchorY = 1 - framingPoint.y
@@ -291,12 +319,23 @@ final class TrackingController: ObservableObject {
             return .idle
         }
 
-        let panMag = max(0, abs(dx) - panTolerance) / (0.5 - panTolerance)
-        let tiltMag = max(0, abs(dy) - tiltTolerance) / (0.5 - tiltTolerance)
+        let panMag = correctionMagnitude(error: dx, tolerance: panTolerance, drift: velocity.dx, lookahead: 0.22)
+        let tiltMag = correctionMagnitude(error: dy, tolerance: tiltTolerance, drift: velocity.dy, lookahead: 0.36)
         let panSpeed = speedByte(magnitude: panMag, reactionSpeed: reactionSpeed)
         let tiltSpeed = min(speedByte(magnitude: tiltMag, reactionSpeed: reactionSpeed), 0x14)
 
         return .moving(pan: panDir, tilt: tiltDir, panSpeed: panSpeed, tiltSpeed: tiltSpeed)
+    }
+
+    private nonisolated static func correctionMagnitude(
+        error: Double, tolerance: Double, drift: Double, lookahead: TimeInterval
+    ) -> Double {
+        let distance = abs(error) - tolerance
+        guard distance > 0 else { return 0 }
+        let outwardDrift = error > 0 ? drift : -drift
+        // Boost outward corrections, and slow down as the target approaches the crosshair.
+        let adjustment = min(0.25, max(-distance * 0.5, outwardDrift * lookahead))
+        return (distance + adjustment) / (0.5 - tolerance)
     }
 
     private nonisolated static func speedByte(magnitude: Double, reactionSpeed: Double) -> UInt8 {
