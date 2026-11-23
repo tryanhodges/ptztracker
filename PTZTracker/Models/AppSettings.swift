@@ -98,10 +98,27 @@ final class AppSettings: ObservableObject {
         savedPresetSlotsByHead[head] = slots.isEmpty ? nil : slots
     }
 
+    @Published private(set) var ignoreZones: [IgnoreZone] {
+        didSet {
+            if let data = try? JSONEncoder().encode(ignoreZones) {
+                defaults.set(data, forKey: Keys.ignoreZones)
+            }
+        }
+    }
+
+    func addIgnoreZone(_ rect: CGRect) {
+        ignoreZones.append(IgnoreZone(rect: rect))
+    }
+
+    func removeIgnoreZone(_ id: UUID) {
+        ignoreZones.removeAll { $0.id == id }
+    }
+
     private let defaults = UserDefaults.standard
 
     private enum Keys {
         static let cameraIP = "cameraIP"
+        static let ignoreZones = "ignoreZones"
         static let savedPresetSlotsByHead = "savedPresetSlotsByHead"
         static let cameraPort = "cameraPort"
         static let deviceAddress = "deviceAddress"
@@ -125,6 +142,8 @@ final class AppSettings: ObservableObject {
 
     init() {
         let d = UserDefaults.standard
+        ignoreZones = d.data(forKey: Keys.ignoreZones)
+            .flatMap { try? JSONDecoder().decode([IgnoreZone].self, from: $0) } ?? []
         savedPresetSlotsByHead = d.dictionary(forKey: Keys.savedPresetSlotsByHead) as? [String: [Int]] ?? [:]
         cameraIP = d.string(forKey: Keys.cameraIP) ?? "192.168.1.188"
         let port = d.object(forKey: Keys.cameraPort) as? Int
@@ -170,4 +189,10 @@ enum TrackingMode: String, CaseIterable, Identifiable {
         case .face: return "Face"
         }
     }
+}
+
+struct IgnoreZone: Codable, Identifiable, Equatable {
+    var id = UUID()
+    /// Normalized image rectangle, with Vision’s bottom-left origin.
+    let rect: CGRect
 }

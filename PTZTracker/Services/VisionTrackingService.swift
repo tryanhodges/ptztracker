@@ -16,17 +16,17 @@ final class VisionTrackingService {
     func detect(
         pixelBuffer: CVPixelBuffer,
         mode: TrackingMode,
-        minConfidence: Float
+        minConfidence: Float,
+        ignoreZones: [IgnoreZone]
     ) -> TrackedTarget? {
         if let tracked = continueTracking(pixelBuffer: pixelBuffer, minConfidence: minConfidence) {
-            return tracked
+            if !ignoreZones.contains(where: { $0.rect.contains(tracked.center) }) { return tracked }
+            reset()
         }
 
-        guard let seeded = seedDetection(
-            pixelBuffer: pixelBuffer,
-            mode: mode,
-            minConfidence: minConfidence
-        ) else {
+        let eligible = candidates(pixelBuffer: pixelBuffer, mode: mode, minConfidence: minConfidence,
+                                  ignoreZones: ignoreZones)
+        guard let seeded = eligible.max(by: { $0.boundingBox.area < $1.boundingBox.area }) else {
             return nil
         }
 
@@ -42,8 +42,11 @@ final class VisionTrackingService {
         lostFrames = 0
     }
 
-    func followSelectedTarget(pixelBuffer: CVPixelBuffer, minConfidence: Float) -> TrackedTarget? {
-        guard let target = continueTracking(pixelBuffer: pixelBuffer, minConfidence: minConfidence) else {
+    func followSelectedTarget(
+        pixelBuffer: CVPixelBuffer, minConfidence: Float, ignoreZones: [IgnoreZone]
+    ) -> TrackedTarget? {
+        guard let target = continueTracking(pixelBuffer: pixelBuffer, minConfidence: minConfidence),
+              !ignoreZones.contains(where: { $0.rect.contains(target.center) }) else {
             reset()
             return nil
         }
@@ -81,17 +84,9 @@ final class VisionTrackingService {
         }
     }
 
-    private func seedDetection(
-        pixelBuffer: CVPixelBuffer,
-        mode: TrackingMode,
-        minConfidence: Float
-    ) -> TrackedTarget? {
-        candidates(pixelBuffer: pixelBuffer, mode: mode, minConfidence: minConfidence).max {
-            $0.boundingBox.area < $1.boundingBox.area
-        }
-    }
-
-    func candidates(pixelBuffer: CVPixelBuffer, mode: TrackingMode, minConfidence: Float) -> [TrackedTarget] {
+    func candidates(
+        pixelBuffer: CVPixelBuffer, mode: TrackingMode, minConfidence: Float, ignoreZones: [IgnoreZone]
+    ) -> [TrackedTarget] {
         do {
             let observations: [VNDetectedObjectObservation]
             switch mode {
@@ -108,6 +103,7 @@ final class VisionTrackingService {
             return observations
                 .filter { $0.confidence >= minConfidence }
                 .map { TrackedTarget(boundingBox: $0.boundingBox, confidence: $0.confidence) }
+                .filter { target in !ignoreZones.contains { $0.rect.contains(target.center) } }
         } catch {
             return []
         }

@@ -73,6 +73,12 @@ To use one button per slot in Companion, add a duration group of 1500 ms set to 
 
 The app’s **Position Memory** section also recalls slots 1–4 and Center. Blue indicates that PTZ Tracker sent a save command for that slot and head. The slots use the head’s native preset memory. Saving replaces the position in that slot. Leave tracking off while recalling a position. An HTTP 202 response confirms the app sent the command over TCP.
 
+## Ignore zones
+
+Open **Ignore Zones** and drag rectangles on the live video. A face or person is eligible for tracking only when its center is outside all zones. Zones remain active after leaving the tab and are saved across app restarts. Use **Remove** next to a zone to delete it.
+
+The **Memory** tab contains position recall and reset. The **Connection** tab contains video input, Datavideo, and Companion settings.
+
 ## Select a primary target
 
 1. Choose **Face** or **Person**, then enable **Select Target**.

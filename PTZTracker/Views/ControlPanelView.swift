@@ -1,30 +1,76 @@
 import AVFoundation
 import SwiftUI
 
+enum ControlPanelTab: String, CaseIterable, Identifiable {
+    case tracking = "Tracking"
+    case ignoreZones = "Ignore Zones"
+    case memory = "Memory"
+    case connection = "Connection"
+
+    var id: Self { self }
+}
+
 struct ControlPanelView: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var controller: TrackingController
     @ObservedObject var camera: CameraCaptureService
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                trackingSection
-                Divider().opacity(0.35)
-                cameraSection
-                Divider().opacity(0.35)
-                viscaSection
-                Divider().opacity(0.35)
-                presetSection
-                Divider().opacity(0.35)
-                tuningSection
-                Divider().opacity(0.35)
-                companionSection
+        VStack(spacing: 0) {
+            Picker("Controls", selection: $controller.controlPanelTab) {
+                ForEach(ControlPanelTab.allCases) { tab in
+                    Text(tab.rawValue).tag(tab)
+                }
             }
-            .padding(16)
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .padding(12)
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    switch controller.controlPanelTab {
+                    case .tracking:
+                        trackingSection
+                        Divider().opacity(0.35)
+                        tuningSection
+                    case .ignoreZones:
+                        ignoreZonesSection
+                    case .memory:
+                        presetSection
+                    case .connection:
+                        cameraSection
+                        Divider().opacity(0.35)
+                        viscaSection
+                        Divider().opacity(0.35)
+                        companionSection
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+            }
+            .id(controller.controlPanelTab)
         }
-        .frame(minWidth: 300, idealWidth: 320, maxWidth: 360)
+        .frame(minWidth: 300, idealWidth: 340, maxWidth: 380)
         .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    private var ignoreZonesSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Drag on the video to draw an ignore zone. Tracking skips targets whose centers are inside a zone.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            ForEach(Array(settings.ignoreZones.enumerated()), id: \.element.id) { index, zone in
+                HStack {
+                    Text("Zone \(index + 1)")
+                    Spacer()
+                    Button("Remove") { settings.removeIgnoreZone(zone.id) }
+                        .accessibilityLabel("Remove Zone \(index + 1)")
+                }
+            }
+        }
     }
 
     private var trackingSection: some View {

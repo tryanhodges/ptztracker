@@ -29,27 +29,10 @@ struct ContentView: View {
                             VideoPreviewView(session: camera.session)
                         }
                         trackingOverlay
-                        GeometryReader { geometry in
-                            Color.clear
-                                .contentShape(Rectangle())
-                                .gesture(DragGesture(minimumDistance: 0).onChanged { drag in
-                                    guard !controller.manualTargetSelection || controller.primaryTargetSelected,
-                                          geometry.size.width > 0, geometry.size.height > 0 else { return }
-                                    settings.setFramingPoint(CGPoint(
-                                        x: drag.location.x / geometry.size.width,
-                                        y: drag.location.y / geometry.size.height
-                                    ))
-                                }.onEnded { drag in
-                                    guard controller.manualTargetSelection, !controller.primaryTargetSelected,
-                                          geometry.size.width > 0, geometry.size.height > 0,
-                                          abs(drag.translation.width) < 6, abs(drag.translation.height) < 6
-                                    else { return }
-                                    controller.selectPrimaryTarget(at: CGPoint(
-                                        x: drag.location.x / geometry.size.width,
-                                        y: drag.location.y / geometry.size.height
-                                    ))
-                                })
-                                .accessibilityHidden(true)
+                        if controller.controlPanelTab == .ignoreZones {
+                            IgnoreZoneEditor(zones: settings.ignoreZones, addZone: controller.addIgnoreZone)
+                        } else if controller.controlPanelTab == .tracking {
+                            framingInteraction
                         }
                     }
                     .aspectRatio(camera.videoAspectRatio, contentMode: .fit)
@@ -60,7 +43,7 @@ struct ContentView: View {
                             .foregroundStyle(.secondary)
                         Text("Waiting for video input")
                             .font(.title3.weight(.semibold))
-                        Text("Choose your Thunderbolt capture device in the sidebar, then start the camera.")
+                        Text("Choose your Thunderbolt capture device, then start the camera.")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -80,5 +63,30 @@ struct ContentView: View {
             ControlPanelView(settings: settings, controller: controller, camera: camera)
         }
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var framingInteraction: some View {
+        GeometryReader { geometry in
+            Color.clear
+                .contentShape(Rectangle())
+                .gesture(DragGesture(minimumDistance: 0).onChanged { drag in
+                    guard !controller.manualTargetSelection || controller.primaryTargetSelected,
+                          geometry.size.width > 0, geometry.size.height > 0 else { return }
+                    settings.setFramingPoint(CGPoint(
+                        x: drag.location.x / geometry.size.width,
+                        y: drag.location.y / geometry.size.height
+                    ))
+                }.onEnded { drag in
+                    guard controller.manualTargetSelection, !controller.primaryTargetSelected,
+                          geometry.size.width > 0, geometry.size.height > 0,
+                          abs(drag.translation.width) < 6, abs(drag.translation.height) < 6
+                    else { return }
+                    controller.selectPrimaryTarget(at: CGPoint(
+                        x: drag.location.x / geometry.size.width,
+                        y: drag.location.y / geometry.size.height
+                    ))
+                })
+                .accessibilityHidden(true)
+        }
     }
 }

@@ -174,3 +174,68 @@ struct TrackingOverlayView: View {
         return CGRect(x: x, y: y, width: w, height: h)
     }
 }
+
+struct IgnoreZoneEditor: View {
+    let zones: [IgnoreZone]
+    let addZone: (CGRect) -> Void
+    @GestureState private var draft: DragGesture.Value?
+
+    var body: some View {
+        GeometryReader { geometry in
+            let size = geometry.size
+            ZStack(alignment: .topLeading) {
+                Color.clear
+                ForEach(Array(zones.enumerated()), id: \.element.id) { index, zone in
+                    zoneOverlay(zone.rect, in: size, number: index + 1)
+                }
+                if let draft {
+                    zoneOverlay(normalizedRect(for: draft, in: size), in: size)
+                }
+            }
+            .contentShape(Rectangle())
+            .clipped()
+            .gesture(
+                DragGesture(minimumDistance: 4)
+                    .updating($draft) { value, draft, _ in draft = value }
+                    .onEnded { value in
+                        let rect = normalizedRect(for: value, in: size)
+                        guard rect.width >= 0.01, rect.height >= 0.01 else { return }
+                        addZone(rect)
+                    }
+            )
+        }
+        .accessibilityHidden(true)
+    }
+
+    private func normalizedRect(for drag: DragGesture.Value, in size: CGSize) -> CGRect {
+        guard size.width > 0, size.height > 0 else { return .zero }
+        func normalize(_ point: CGPoint) -> CGPoint {
+            CGPoint(x: min(1, max(0, point.x / size.width)),
+                    y: 1 - min(1, max(0, point.y / size.height)))
+        }
+        let start = normalize(drag.startLocation)
+        let end = normalize(drag.location)
+        return CGRect(x: min(start.x, end.x), y: min(start.y, end.y),
+                      width: abs(start.x - end.x), height: abs(start.y - end.y))
+    }
+
+    private func zoneOverlay(_ rect: CGRect, in size: CGSize, number: Int? = nil) -> some View {
+        Rectangle()
+            .fill(Color.red.opacity(0.24))
+            .overlay {
+                Rectangle().strokeBorder(.red.opacity(0.85), style: StrokeStyle(lineWidth: 1.5, dash: [5, 3]))
+            }
+            .overlay(alignment: .topLeading) {
+                if let number {
+                    Text("Zone \(number)")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(4)
+                        .background(.black.opacity(0.65))
+                }
+            }
+            .frame(width: rect.width * size.width, height: rect.height * size.height)
+            .position(x: rect.midX * size.width, y: (1 - rect.midY) * size.height)
+            .allowsHitTesting(false)
+    }
+}

@@ -15,6 +15,7 @@ final class TrackingController: ObservableObject {
         }
     }
 
+    @Published var controlPanelTab: ControlPanelTab = .tracking
     @Published private(set) var currentTarget: TrackedTarget?
     @Published private(set) var manualTargetSelection = false
     @Published private(set) var targetCandidates: [TrackedTarget] = []
@@ -132,6 +133,14 @@ final class TrackingController: ObservableObject {
         }
     }
 
+    func addIgnoreZone(_ rect: CGRect) {
+        settings.addIgnoreZone(rect)
+        targetCandidates.removeAll { rect.contains($0.center) }
+        if let currentTarget, rect.contains(currentTarget.center) {
+            clearPrimaryTarget()
+        }
+    }
+
     func selectPrimaryTarget(at previewPoint: CGPoint) {
         guard manualTargetSelection, !primaryTargetSelected else { return }
         let point = CGPoint(x: previewPoint.x, y: 1 - previewPoint.y)
@@ -166,26 +175,28 @@ final class TrackingController: ObservableObject {
         }
 
         let revision = targetRevision
+        let ignoreZones = settings.ignoreZones
         let manual = manualTargetSelection
         let hasSelection = primaryTargetSelected
         visionQueue.async { [weak self, vision] in
             let target: TrackedTarget?
             let candidates: [TrackedTarget]
             if !manual {
-                target = vision.detect(pixelBuffer: pixelBuffer, mode: mode, minConfidence: confidence)
+                target = vision.detect(pixelBuffer: pixelBuffer, mode: mode, minConfidence: confidence, ignoreZones: ignoreZones)
                 candidates = []
             } else if hasSelection {
-                target = vision.followSelectedTarget(pixelBuffer: pixelBuffer, minConfidence: confidence)
+                target = vision.followSelectedTarget(pixelBuffer: pixelBuffer, minConfidence: confidence, ignoreZones: ignoreZones)
                 candidates = []
             } else {
                 target = nil
-                candidates = vision.candidates(pixelBuffer: pixelBuffer, mode: mode, minConfidence: confidence)
+                candidates = vision.candidates(pixelBuffer: pixelBuffer, mode: mode, minConfidence: confidence, ignoreZones: ignoreZones)
             }
 
             Task { @MainActor in
                 guard let self else { return }
                 self.processingFrame = false
-                guard self.targetRevision == revision, self.settings.trackingMode == mode else { return }
+                guard self.targetRevision == revision, self.settings.trackingMode == mode,
+                      self.settings.ignoreZones == ignoreZones else { return }
                 if hasSelection, target == nil { self.primaryTargetSelected = false }
                 self.targetCandidates = candidates
                 self.applyFrameResult(target: target, trackingOn: trackingOn)
