@@ -20,7 +20,7 @@ Shortcut: **⌘T** toggles tracking.
 
 ## Blackmagic UltraStudio HD Mini
 
-PTZ Tracker uses DeckLink for the UltraStudio HD Mini with a **1080i60 SDI** feed (60.00 fields per second). Select SDI in Blackmagic Desktop Video Setup and close other apps using the input before starting capture. The Video Input section shows the capture mode and whether frames are arriving.
+PTZ Tracker uses DeckLink for the UltraStudio HD Mini with a **1080i60 SDI** feed (60.00 fields per second). Select SDI in Blackmagic Desktop Video Setup and close other apps using the input before starting capture. The Video Input section shows the capture mode and whether frames are arriving. PTZ Tracker deinterlaces this feed before sending it to Vision and the preview, using one field per frame and interpolating the missing lines.
 
 Install Blackmagic Desktop Video on the Mac that runs the app. To build with DeckLink support, extract Blackmagic DeckLink SDK 16.0 to `~/Downloads/Blackmagic DeckLink SDK 16.0` or point the Xcode build setting `DECKLINK_SDK_INCLUDE` to the SDK’s `Mac/include` folder. The project also builds without the SDK for AVFoundation inputs.
 

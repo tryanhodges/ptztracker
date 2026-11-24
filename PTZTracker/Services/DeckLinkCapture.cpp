@@ -2,7 +2,6 @@
 
 #if __has_include(<DeckLinkAPI.h>)
 #include <DeckLinkAPI.h>
-#include <algorithm>
 #include <atomic>
 #include <cstring>
 #include <dlfcn.h>
@@ -10,6 +9,22 @@
 #include <utility>
 
 namespace {
+void deinterlace(const unsigned char *source, size_t sourceStride, unsigned char *destination,
+                 size_t destinationStride, size_t rowBytes, int height) {
+    // Keep the even field. Reconstruct its missing rows from the same instant in time.
+    for (int row = 0; row < height; ++row) {
+        auto *output = destination + row * destinationStride;
+        const auto *above = source + (row & ~1) * sourceStride;
+        if (row % 2 == 0 || row + 1 == height) {
+            memcpy(output, above, rowBytes);
+        } else {
+            const auto *below = source + (row + 1) * sourceStride;
+            for (size_t column = 0; column < rowBytes; ++column)
+                output[column] = (above[column] + below[column] + 1) / 2;
+        }
+    }
+}
+
 class Capture final : public IDeckLinkInputCallback {
     std::atomic<ULONG> references{1};
     std::mutex frameMutex;
@@ -109,12 +124,17 @@ private:
         }
         const size_t sourceStride = frame->GetRowBytes();
         const size_t destinationStride = CVPixelBufferGetBytesPerRow(pixels);
+        const size_t rowBytes = static_cast<size_t>(width) * 2; // Packed 8-bit UYVY.
         auto *destination = static_cast<unsigned char *>(CVPixelBufferGetBaseAddress(pixels));
-        auto *source = static_cast<const unsigned char *>(bytes);
-        for (int row = 0; row < height; ++row) {
-            memcpy(destination + row * destinationStride, source + row * sourceStride,
-                   std::min(sourceStride, destinationStride));
+        if (!destination || sourceStride < rowBytes || destinationStride < rowBytes ||
+            CVPixelBufferGetWidth(pixels) != static_cast<size_t>(width) ||
+            CVPixelBufferGetHeight(pixels) != static_cast<size_t>(height)) {
+            CVPixelBufferUnlockBaseAddress(pixels, 0);
+            CVPixelBufferRelease(pixels);
+            return nullptr;
         }
+        deinterlace(static_cast<const unsigned char *>(bytes), sourceStride, destination,
+                    destinationStride, rowBytes, height);
         CVPixelBufferUnlockBaseAddress(pixels, 0);
         CVBufferSetAttachment(pixels, kCVImageBufferYCbCrMatrixKey, kCVImageBufferYCbCrMatrix_ITU_R_709_2,
                               kCVAttachmentMode_ShouldPropagate);
