@@ -5,6 +5,7 @@ import Vision
 final class VisionTrackingService {
     private let sequenceHandler = VNSequenceRequestHandler()
     private var activeTracker: VNTrackObjectRequest?
+    var hasActiveTracker: Bool { activeTracker != nil }
     private var lostFrames = 0
     private let maxLostFrames = 12
 
@@ -45,8 +46,10 @@ final class VisionTrackingService {
     func followSelectedTarget(
         pixelBuffer: CVPixelBuffer, minConfidence: Float, ignoreZones: [IgnoreZone]
     ) -> TrackedTarget? {
-        guard let target = continueTracking(pixelBuffer: pixelBuffer, minConfidence: minConfidence),
-              !ignoreZones.contains(where: { $0.rect.contains(target.center) }) else {
+        guard let target = continueTracking(pixelBuffer: pixelBuffer, minConfidence: minConfidence) else {
+            return nil
+        }
+        guard !ignoreZones.contains(where: { $0.rect.contains(target.center) }) else {
             reset()
             return nil
         }

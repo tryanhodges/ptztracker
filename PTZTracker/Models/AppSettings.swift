@@ -20,6 +20,12 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(reactionSpeed, forKey: Keys.reactionSpeed) }
     }
 
+    static let centerReturnDelayRange = 0...120
+
+    @Published var centerReturnDelay: Int {
+        didSet { defaults.set(centerReturnDelay, forKey: Keys.centerReturnDelay) }
+    }
+
     /// Preferred target center in normalized image coordinates, measured from the top left.
     @Published private(set) var framingPoint: CGPoint {
         didSet { defaults.set([Double(framingPoint.x), Double(framingPoint.y)], forKey: Keys.framingPoint) }
@@ -123,6 +129,7 @@ final class AppSettings: ObservableObject {
         static let cameraPort = "cameraPort"
         static let deviceAddress = "deviceAddress"
         static let reactionSpeed = "reactionSpeed"
+        static let centerReturnDelay = "centerReturnDelay"
         static let legacyBufferZone = "bufferZone"
         static let deadZoneWidth = "deadZoneWidth"
         static let deadZoneHeight = "deadZoneHeight"
@@ -152,6 +159,9 @@ final class AppSettings: ObservableObject {
         deviceAddress = addr ?? 1
         let speed = d.object(forKey: Keys.reactionSpeed) as? Double
         reactionSpeed = speed ?? 0.55
+        let delay = d.integer(forKey: Keys.centerReturnDelay)
+        centerReturnDelay = min(Self.centerReturnDelayRange.upperBound,
+                                max(Self.centerReturnDelayRange.lowerBound, delay))
         let legacyHalfSize = d.object(forKey: Keys.legacyBufferZone) as? Double ?? 0.12
         deadZoneWidth = Self.clampedDeadZoneSize(d.object(forKey: Keys.deadZoneWidth) as? Double ?? legacyHalfSize * 2)
         deadZoneHeight = Self.clampedDeadZoneSize(d.object(forKey: Keys.deadZoneHeight) as? Double ?? legacyHalfSize * 2)

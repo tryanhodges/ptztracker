@@ -85,6 +85,26 @@ struct ControlPanelView: View {
             .toggleStyle(.switch)
             .tint(Color(red: 1.0, green: 0.72, blue: 0.2))
 
+            VStack(alignment: .leading, spacing: 4) {
+                Stepper(value: $settings.centerReturnDelay, in: AppSettings.centerReturnDelayRange) {
+                    HStack {
+                        Text("Return to Center after loss")
+                        Spacer()
+                        Text(settings.centerReturnDelay == 0 ? "Off" : "\(settings.centerReturnDelay) s")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                }
+                Text("After losing the subject, wait this long before recalling the saved Center position.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                if let message = controller.centerReturnMessage {
+                    Text(message)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             Picker("Detect", selection: $settings.trackingMode) {
                 ForEach(TrackingMode.allCases) { mode in
                     Text(mode.title).tag(mode)
@@ -317,7 +337,7 @@ struct ControlPanelView: View {
                         .monospacedDigit()
                 }
                 Slider(value: $settings.reactionSpeed, in: 0.1...1.0)
-                Text("Higher = faster pan/tilt for the same offset.")
+                Text("Higher values make the head pan and tilt faster during a correction.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -325,7 +345,7 @@ struct ControlPanelView: View {
             VStack(alignment: .leading, spacing: 8) {
                 deadZoneSlider("Dead zone width", value: $settings.deadZoneWidth)
                 deadZoneSlider("Dead zone height", value: $settings.deadZoneHeight)
-                Text("Leaving the dashed box starts a correction. The head holds again once the target is near the crosshair.")
+                Text("The dashed box sets when the head starts moving. A subject moving toward its edge can trigger a correction slightly early.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }

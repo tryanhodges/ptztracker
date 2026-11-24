@@ -9,7 +9,10 @@ import Network
 final class TrackingController: ObservableObject {
     @Published var trackingEnabled = false {
         didSet {
+            guard trackingEnabled != oldValue else { return }
+            targetRevision += 1
             if !trackingEnabled {
+                resetTargetLoss()
                 resetTargetMotion()
                 Task { await stopHead() }
             }
@@ -69,8 +72,12 @@ final class TrackingController: ObservableObject {
     private var targetRevision = 0
     private var processingFrame = false
     private var recentering = false
+    private var hasTrackedSubject = false
+    private var subjectLostAt: TimeInterval?
+    @Published private(set) var centerReturnMessage: String?
     private var lastTargetSample: (center: CGPoint, time: TimeInterval)?
     private var targetVelocity = CGVector.zero
+    private var driveSpeed = CGVector.zero
 
     init(settings: AppSettings, camera: CameraCaptureService) {
         self.settings = settings
@@ -129,9 +136,17 @@ final class TrackingController: ObservableObject {
         recentering = false
         lastTargetSample = nil
         targetVelocity = .zero
+        driveSpeed = .zero
+    }
+
+    private func resetTargetLoss() {
+        hasTrackedSubject = false
+        subjectLostAt = nil
+        centerReturnMessage = nil
     }
 
     func clearPrimaryTarget() {
+        resetTargetLoss()
         resetTargetMotion()
         targetRevision += 1
         primaryTargetSelected = false
@@ -204,12 +219,13 @@ final class TrackingController: ObservableObject {
                 candidates = vision.candidates(pixelBuffer: pixelBuffer, mode: mode, minConfidence: confidence, ignoreZones: ignoreZones)
             }
 
+            let selectionLost = hasSelection && !vision.hasActiveTracker
             Task { @MainActor in
                 guard let self else { return }
                 self.processingFrame = false
                 guard self.targetRevision == revision, self.settings.trackingMode == mode,
                       self.settings.ignoreZones == ignoreZones else { return }
-                if hasSelection, target == nil { self.primaryTargetSelected = false }
+                if selectionLost { self.primaryTargetSelected = false }
                 self.targetCandidates = candidates
                 self.applyFrameResult(target: target, trackingOn: trackingOn, frameTime: frameTime)
             }
@@ -229,8 +245,15 @@ final class TrackingController: ObservableObject {
             return
         }
 
+        guard !sendingPreset else { return }
+
         let motion: PTZMotion
         if let target {
+            hasTrackedSubject = true
+            subjectLostAt = nil
+            centerReturnMessage = nil
+            let elapsed = lastTargetSample.map { frameTime - $0.time } ?? minInterval
+            if elapsed > 0.35 { driveSpeed = .zero }
             updateTargetVelocity(center: target.center, frameTime: frameTime)
             motion = Self.computeMotion(
                 for: target,
@@ -241,11 +264,16 @@ final class TrackingController: ObservableObject {
                 invertPan: settings.invertPan,
                 invertTilt: settings.invertTilt,
                 velocity: targetVelocity,
+                elapsed: elapsed,
+                driveSpeed: &driveSpeed,
                 recentering: &recentering
             )
         } else {
             resetTargetMotion()
             motion = .idle
+            if hasTrackedSubject, subjectLostAt == nil {
+                subjectLostAt = frameTime
+            }
         }
 
         if currentMotion != motion {
@@ -255,6 +283,35 @@ final class TrackingController: ObservableObject {
             // Keep refreshing VISCA while moving so identical keys can be skipped inside the client,
             // but still allow reconnect recovery.
             Task { await dispatchMotion(motion) }
+        }
+
+        if target == nil, let subjectLostAt, settings.centerReturnDelay > 0,
+           frameTime - subjectLostAt >= Double(settings.centerReturnDelay) {
+            hasTrackedSubject = false
+            self.subjectLostAt = nil
+            let revision = targetRevision
+            Task { await returnToCenter(revision: revision) }
+        }
+    }
+
+    private func returnToCenter(revision: Int) async {
+        guard trackingEnabled, revision == targetRevision, currentTarget == nil,
+              !sendingPreset, settings.centerReturnDelay > 0 else { return }
+        guard configuredPresetHead == settings.presetHead else {
+            centerReturnMessage = "Reconnect the head to use Return to Center."
+            return
+        }
+        sendingPreset = true
+        defer { sendingPreset = false }
+        do {
+            connection.lastCommandHex = try await visca.sendPreset(5, recall: true)
+            if trackingEnabled, revision == targetRevision, currentTarget == nil {
+                centerReturnMessage = "Center recall sent."
+            }
+        } catch {
+            if trackingEnabled, revision == targetRevision, currentTarget == nil {
+                centerReturnMessage = "Could not recall Center. Check the head connection."
+            }
         }
     }
 
@@ -269,7 +326,7 @@ final class TrackingController: ObservableObject {
             targetVelocity = .zero
             return
         }
-        let weight = 1 - exp(-elapsed / 0.12)
+        let weight = 1 - exp(-elapsed / 0.08)
         targetVelocity.dx += (dx / elapsed - targetVelocity.dx) * weight
         targetVelocity.dy += (dy / elapsed - targetVelocity.dy) * weight
     }
@@ -284,6 +341,8 @@ final class TrackingController: ObservableObject {
         invertPan: Bool,
         invertTilt: Bool,
         velocity: CGVector,
+        elapsed: TimeInterval,
+        driveSpeed: inout CGVector,
         recentering: inout Bool
     ) -> PTZMotion {
         let anchorY = 1 - framingPoint.y
@@ -291,40 +350,52 @@ final class TrackingController: ObservableObject {
         let dy = target.center.y - anchorY
         let halfWidth = deadZoneWidth / 2
         let halfHeight = deadZoneHeight / 2
-        // Start at the outer box, then settle in a smaller box around the framing point.
+        // Lead a moving subject near the outer edge and keep correcting while the head slows.
         if !recentering {
-            guard abs(dx) > halfWidth || abs(dy) > halfHeight else { return .idle }
+            guard approachesEdge(error: dx, drift: velocity.dx, halfSize: halfWidth)
+                    || approachesEdge(error: dy, drift: velocity.dy, halfSize: halfHeight)
+            else { return .idle }
             recentering = true
         }
         let panTolerance = min(0.02, halfWidth / 2)
         let tiltTolerance = min(0.02, halfHeight / 2)
 
-        var panDir: PTZMotion.PanDirection = .stop
-        var tiltDir: PTZMotion.TiltDirection = .stop
+        let panMag = correctionMagnitude(error: dx, tolerance: panTolerance, drift: velocity.dx, lookahead: 0.45)
+        let tiltMag = correctionMagnitude(error: dy, tolerance: tiltTolerance, drift: velocity.dy, lookahead: 0.55)
+        let desiredPan = signedSpeed(error: dx, magnitude: panMag, reactionSpeed: reactionSpeed, limit: 0x18)
+        let desiredTilt = signedSpeed(error: dy, magnitude: tiltMag, reactionSpeed: reactionSpeed, limit: 0x14)
 
-        if abs(dx) > panTolerance {
-            let goingRight = dx > 0
-            let panRight = invertPan ? !goingRight : goingRight
-            panDir = panRight ? .right : .left
-        }
-
-        if abs(dy) > tiltTolerance {
-            let goingUp = dy > 0
-            let tiltUp = invertTilt ? !goingUp : goingUp
-            tiltDir = tiltUp ? .up : .down
-        }
-
-        if panDir == .stop && tiltDir == .stop {
+        driveSpeed.dx = easedSpeed(current: driveSpeed.dx, desired: desiredPan, elapsed: elapsed)
+        driveSpeed.dy = easedSpeed(current: driveSpeed.dy, desired: desiredTilt, elapsed: elapsed)
+        guard driveSpeed != .zero else {
             recentering = false
             return .idle
         }
 
-        let panMag = correctionMagnitude(error: dx, tolerance: panTolerance, drift: velocity.dx, lookahead: 0.22)
-        let tiltMag = correctionMagnitude(error: dy, tolerance: tiltTolerance, drift: velocity.dy, lookahead: 0.36)
-        let panSpeed = speedByte(magnitude: panMag, reactionSpeed: reactionSpeed)
-        let tiltSpeed = min(speedByte(magnitude: tiltMag, reactionSpeed: reactionSpeed), 0x14)
+        let pan = invertPan ? -driveSpeed.dx : driveSpeed.dx
+        let tilt = invertTilt ? -driveSpeed.dy : driveSpeed.dy
+        return .moving(
+            pan: pan == 0 ? .stop : (pan > 0 ? .right : .left),
+            tilt: tilt == 0 ? .stop : (tilt > 0 ? .up : .down),
+            panSpeed: UInt8(max(1, abs(pan).rounded())),
+            tiltSpeed: UInt8(max(1, abs(tilt).rounded()))
+        )
+    }
 
-        return .moving(pan: panDir, tilt: tiltDir, panSpeed: panSpeed, tiltSpeed: tiltSpeed)
+    private nonisolated static func easedSpeed(current: Double, desired: Double, elapsed: TimeInterval) -> Double {
+        // Apply increases immediately. Shed speed over time and brake to zero before reversing.
+        let sameDirection = current * desired >= 0
+        if sameDirection, abs(desired) >= abs(current) { return desired }
+
+        let goal = sameDirection ? abs(desired) : 0
+        let magnitude = max(goal, abs(current) - 26 * max(0, elapsed))
+        return magnitude < 0.5 ? 0 : (current > 0 ? magnitude : -magnitude)
+    }
+
+    private nonisolated static func approachesEdge(error: Double, drift: Double, halfSize: Double) -> Bool {
+        let outwardDrift = error > 0 ? drift : -drift
+        let lead = min(0.03, halfSize * 0.25, max(0, outwardDrift) * 0.15)
+        return abs(error) + lead > halfSize
     }
 
     private nonisolated static func correctionMagnitude(
@@ -334,14 +405,16 @@ final class TrackingController: ObservableObject {
         guard distance > 0 else { return 0 }
         let outwardDrift = error > 0 ? drift : -drift
         // Boost outward corrections, and slow down as the target approaches the crosshair.
-        let adjustment = min(0.25, max(-distance * 0.5, outwardDrift * lookahead))
-        return (distance + adjustment) / (0.5 - tolerance)
+        let adjustment = min(0.30, max(-distance * 0.5, outwardDrift * lookahead))
+        return (distance + adjustment) / (0.28 - tolerance)
     }
 
-    private nonisolated static func speedByte(magnitude: Double, reactionSpeed: Double) -> UInt8 {
-        let scaled = magnitude * reactionSpeed
-        let value = Int((scaled * 23.0).rounded()) + 1
-        return UInt8(clamping: max(1, min(0x18, value)))
+    private nonisolated static func signedSpeed(
+        error: Double, magnitude: Double, reactionSpeed: Double, limit: Double
+    ) -> Double {
+        guard magnitude > 0 else { return 0 }
+        let speed = min(limit, 1 + magnitude * reactionSpeed * 23)
+        return error > 0 ? speed : -speed
     }
 
     private func dispatchMotion(_ motion: PTZMotion) async {

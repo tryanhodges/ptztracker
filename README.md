@@ -85,13 +85,14 @@ The **Memory** tab contains position recall and reset. The **Connection** tab co
 2. In the live preview, click the outline of the subject you want to follow.
 3. Turn **Tracking On** when you want the head to move.
 
-The head holds if Vision loses the selected target. Click another outlined target, use **Choose Another Target** to replace a current selection, or turn **Select Target** off to resume automatic selection. The framing sliders remain available while choosing a target.
+The head holds if Vision loses the selected target. If Return to Center is enabled, the head recalls Center after the configured wait. Click another outlined target, use **Choose Another Target** to replace a current selection, or turn **Select Target** off to resume automatic selection. The framing sliders remain available while choosing a target.
 
 ## Tuning tips
 
 - **Framing** lets you click or drag in the live preview to place the crosshair where the tracked face or person should stay. You can also use the horizontal and vertical sliders. The app saves the position. **Reset to Center** restores the default.
-- **Dead zone width** and **Dead zone height** resize the dashed box independently. Each percentage is measured against the corresponding video dimension. The head holds until the target’s center leaves the box, then recenters near the crosshair before holding again.
-- **Reaction speed** scales the correction speed. The tracker also speeds up when the target drifts away from the crosshair and slows down as it comes back, with a stronger response to vertical drift.
+- **Dead zone width** and **Dead zone height** resize the dashed box independently. Each percentage is measured against the corresponding video dimension. The head starts correcting as a moving subject approaches or crosses the box edge, then settles near the crosshair. Narrow the width to start horizontal corrections sooner.
+- **Reaction speed** scales how fast the head moves during a correction. The head speeds up as the subject moves farther from the crosshair or drifts outward faster, then eases down as the subject returns toward or crosses the crosshair.
+- **Return to Center** waits 1–120 seconds after losing a tracked face or person, then recalls the head’s saved Center position (slot 5) once. Reacquiring a target during the wait cancels the return. Tracking stays enabled. The setting defaults to Off.
 - **Sensitivity**: raise it to ignore weak / false detections; lower it if the box drops out.
 - Use **Invert pan / tilt** if the head moves the wrong way relative to the picture.
 
