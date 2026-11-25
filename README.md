@@ -123,3 +123,9 @@ In the existing Companion Generic HTTP connection, add a **POST** with an empty 
 | Advanced 3 | `tracking/speed/3` |
 
 `GET /status` reports `speedMode` as `"basic"`, `"1"`, `"2"`, or `"3"`.
+
+## Record and rehearse
+
+Open **Rehearsal** with a camera input running. Entering this tab disarms live tracking. Click **Record Camera Input** to record the clean video feed. **Stop Recording** opens a preview with start and end sliders. Scrub or play the range, enter a name, and click **Save Clip**. Finished clips appear under **Saved clips** and in **Documents/PTZ Tracker Clips**. Finished recordings awaiting trimming can be reopened from **Resume unfinished recording**.
+
+Select a saved clip or use **Open Clip**. The app analyzes it with the current face/person detection and ignore zones. Play, scrub, or loop a selected range and compare the Basic and Advanced speed profiles. The overlay shows the simulated motion the head would receive. Playback uses the original camera footage. In the curve editor, orange **P** and cyan **T** dots show the active advanced preset’s pan and tilt commands during tracking or rehearsal. Adding a node splits the existing curve in place.

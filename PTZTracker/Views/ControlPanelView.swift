@@ -4,6 +4,7 @@ import SwiftUI
 enum ControlPanelTab: String, CaseIterable, Identifiable {
     case tracking = "Tracking"
     case ignoreZones = "Ignore Zones"
+    case rehearsal = "Rehearsal"
     case memory = "Memory"
     case connection = "Connection"
 
@@ -24,13 +25,16 @@ struct ControlPanelView: View {
             }
             .labelsHidden()
             .pickerStyle(.segmented)
-            .padding(12)
+            .controlSize(.small)
+            .padding(8)
 
             Divider()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     switch controller.controlPanelTab {
+                    case .rehearsal:
+                        RehearsalControls(session: controller.rehearsal, settings: settings, controller: controller, camera: camera)
                     case .tracking:
                         trackingSection
                         Divider().opacity(0.35)
@@ -52,10 +56,10 @@ struct ControlPanelView: View {
             }
             .id(controller.controlPanelTab)
         }
-        .frame(minWidth: 300, idealWidth: 340, maxWidth: 380)
+        .frame(minWidth: 355, idealWidth: 380, maxWidth: 420)
         .background(Color(nsColor: .controlBackgroundColor))
         .sheet(isPresented: $controller.showingSpeedCurveEditor) {
-            SpeedCurveEditor(settings: settings, initialSlot: settings.trackingSpeedMode.slot ?? 0)
+            SpeedCurveEditor(controller: controller, settings: settings, initialSlot: (controller.controlPanelTab == .rehearsal ? controller.rehearsal.compareMode : settings.trackingSpeedMode).slot ?? 0)
         }
     }
 

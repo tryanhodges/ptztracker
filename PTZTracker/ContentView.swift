@@ -5,6 +5,8 @@ struct ContentView: View {
     @EnvironmentObject private var camera: CameraCaptureService
     @EnvironmentObject private var controller: TrackingController
 
+    @EnvironmentObject private var rehearsal: RehearsalSession
+
     private var trackingOverlay: some View {
         TrackingOverlayView(
             target: controller.currentTarget,
@@ -21,14 +23,16 @@ struct ContentView: View {
         HSplitView {
             ZStack {
                 Color.black
-                if camera.isRunning {
+                if controller.controlPanelTab == .rehearsal, rehearsal.selected != nil {
+                    RehearsalPreview(session: rehearsal, settings: settings)
+                } else if camera.isRunning {
                     ZStack {
                         if camera.usingDeckLink {
                             DeckLinkPreviewView(layer: camera.deckLinkPreview)
                         } else {
                             VideoPreviewView(session: camera.session)
                         }
-                        trackingOverlay
+                        if controller.controlPanelTab != .rehearsal { trackingOverlay }
                         if controller.controlPanelTab == .ignoreZones {
                             IgnoreZoneEditor(zones: settings.ignoreZones, addZone: controller.addIgnoreZone)
                         } else if controller.controlPanelTab == .tracking {

@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct SpeedCurveEditor: View {
+    @EnvironmentObject private var rehearsal: RehearsalSession
+    @ObservedObject var controller: TrackingController
     @ObservedObject var settings: AppSettings
     @Environment(\.dismiss) private var dismiss
     private final class Selection: ObservableObject {
@@ -14,7 +16,11 @@ struct SpeedCurveEditor: View {
 
     @StateObject private var selection: Selection
 
-    init(settings: AppSettings, initialSlot: Int) {
+    let embedded: Bool
+
+    init(controller: TrackingController, settings: AppSettings, initialSlot: Int, embedded: Bool = false) {
+        self.embedded = embedded
+        self.controller = controller
         self.settings = settings
         _selection = StateObject(wrappedValue: Selection(slot: initialSlot))
     }
@@ -31,7 +37,10 @@ struct SpeedCurveEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Picker("Preset", selection: $selection.slot) {
+                Picker("Preset", selection: Binding(get: { selection.slot }, set: { slot in
+                    selection.slot = slot
+                    if embedded { rehearsal.compareMode = TrackingSpeedMode.allCases[slot + 1] }
+                })) {
                     ForEach(0..<3) { index in Text("Preset \(index + 1)").tag(index) }
                 }
                 TextField("Preset name", text: $settings.trackingSpeedProfiles[selection.slot].name)
@@ -48,7 +57,18 @@ struct SpeedCurveEditor: View {
                                   height: geometry.size.height - 54)
                 graph(in: rect)
             }
-            .frame(height: 290)
+            .frame(height: embedded ? 160 : 290)
+
+            if embedded {
+                HStack {
+                    axisReading("Pan", point: rehearsal.frame?.pan, color: .orange)
+                    axisReading("Tilt", point: rehearsal.frame?.tilt, color: .cyan)
+                    Spacer()
+                    if rehearsal.analyzing { Text("Analyzing clip…") }
+                    else if rehearsal.frame?.target == nil { Text("No target detected") }
+                }
+                .font(.caption)
+            }
 
             Text("Drag nodes to set speed. Select a node to adjust each handle independently.")
                 .foregroundStyle(.secondary)
@@ -69,12 +89,12 @@ struct SpeedCurveEditor: View {
                 }
                 Spacer()
                 Button(copyTitle) { selection.confirmingAxisCopy = true }
-                Button("Done") { dismiss() }
+                Button("Done") { if embedded { rehearsal.editingCurves = false } else { dismiss() } }
                     .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(22)
-        .frame(width: 680)
+        .padding(embedded ? 10 : 22)
+        .frame(minWidth: 620, idealWidth: 680, maxWidth: embedded ? .infinity : 680)
         .alert(copyTitle + "?", isPresented: $selection.confirmingAxisCopy) {
             Button("Cancel", role: .cancel) {}
             Button(copyTitle) { copyToOtherAxis() }
@@ -132,8 +152,33 @@ struct SpeedCurveEditor: View {
                         })
                     .accessibilityLabel("\(node.marker ?? "Curve node"), \(Int((node.point.y * 100).rounded())) percent")
             }
+            let replay = controller.controlPanelTab == .rehearsal
+            if (replay ? rehearsal.compareMode : settings.trackingSpeedMode).slot == selection.slot {
+                marker("P", point: replay ? rehearsal.frame?.pan : controller.panPoint, color: .orange, rect: rect)
+                marker("T", point: replay ? rehearsal.frame?.tilt : controller.tiltPoint, color: .cyan, rect: rect)
+            }
         }
         .coordinateSpace(name: "speedGraph")
+    }
+
+    private func axisReading(_ axis: String, point: SpeedCurve.Point?, color: Color) -> some View {
+        Label("\(axis) · \(point.map { "\(Int(($0.y * 100).rounded()))%" } ?? "Hold")",
+              systemImage: "circle.fill")
+            .foregroundStyle(color)
+    }
+
+    @ViewBuilder private func marker(_ label: String, point: SpeedCurve.Point?, color: Color, rect: CGRect) -> some View {
+        if let point {
+            let p = position(point, in: rect)
+            ZStack {
+                Circle().strokeBorder(color, lineWidth: 3).frame(width: 18, height: 18)
+                Text(label).font(.caption.bold()).foregroundStyle(color)
+                    .padding(2).background(.black.opacity(0.8), in: Capsule())
+                    .offset(x: label == "P" ? -13 : 13, y: -10)
+            }
+            .position(p)
+            .allowsHitTesting(false)
+        }
     }
 
     private func handle(_ index: Int, incoming: Bool, in rect: CGRect) -> some View {
@@ -182,15 +227,10 @@ struct SpeedCurveEditor: View {
         let value = curve.wrappedValue
         let spans = 0..<(value.nodes.count - 1)
         func width(_ index: Int) -> Double { value.nodes[index + 1].point.x - value.nodes[index].point.x }
-        let available = spans.filter { width($0) >= 0.008 }
+        let available = spans.filter { width($0) >= 0.022 }
         let index = selectedIndex.flatMap { available.contains($0) ? $0 : nil }
             ?? available.max { width($0) < width($1) }
         guard let index else { return }
-        let x = value.nodes[index].point.x + width(index) / 2
-        let y = value.speed(at: x)
-        let node = SpeedCurve.Node(point: .init(x: x, y: y),
-                                   incoming: .init(x: 0.25, y: y), outgoing: .init(x: 0.25, y: y))
-        curve.wrappedValue.nodes.insert(node, at: index + 1)
-        selection.node = node.id
+        selection.node = curve.wrappedValue.split(after: index)
     }
 }

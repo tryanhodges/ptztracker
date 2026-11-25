@@ -47,8 +47,9 @@ actor ViscaClient {
         let conn = NWConnection(to: endpoint, using: params)
         connection = conn
 
-        conn.stateUpdateHandler = { [weak self] state in
-            Task { await self?.handleState(state) }
+        conn.stateUpdateHandler = { [weak self, weak conn] state in
+            guard let conn else { return }
+            Task { await self?.handleState(state, from: conn) }
         }
         conn.start(queue: .global(qos: .userInitiated))
         receiveLoop(conn)
@@ -105,12 +106,14 @@ actor ViscaClient {
         if !force, key == lastMotionKey {
             return nil
         }
+        let sendingConnection = connection
         lastMotionKey = key
 
         do {
             try await send(packet)
             return packet.map { String(format: "%02X", $0) }.joined(separator: " ")
         } catch {
+            guard connection === sendingConnection else { return nil }
             isConnected = false
             reconnect()
             return nil
@@ -154,7 +157,8 @@ actor ViscaClient {
 
     // MARK: - Transport
 
-    private func handleState(_ state: NWConnection.State) {
+    private func handleState(_ state: NWConnection.State, from conn: NWConnection) {
+        guard connection === conn else { return }
         switch state {
         case .ready:
             isConnected = true
@@ -166,18 +170,16 @@ actor ViscaClient {
     }
 
     private func receiveLoop(_ conn: NWConnection) {
+        guard connection === conn else { return }
         conn.receive(minimumIncompleteLength: 1, maximumLength: 1024) { [weak self] _, _, isComplete, error in
             if error != nil || isComplete {
-                Task { await self?.markDisconnected() }
+                Task { await self?.handleState(.cancelled, from: conn) }
                 return
             }
             Task { await self?.receiveLoop(conn) }
         }
     }
 
-    private func markDisconnected() {
-        isConnected = false
-    }
 
     private func send(_ data: Data) async throws {
         guard let connection else {

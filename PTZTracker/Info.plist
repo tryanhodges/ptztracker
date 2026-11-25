@@ -20,6 +20,8 @@
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>PTZ Tracker saves your rehearsal clips in Documents and lists them for playback.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>PTZ Tracker uses your Thunderbolt or USB video input to detect and track subjects for pan/tilt control.</string>
 	<key>NSLocalNetworkUsageDescription</key>

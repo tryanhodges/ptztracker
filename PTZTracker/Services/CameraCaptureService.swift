@@ -18,8 +18,11 @@ final class CameraCaptureService: NSObject, ObservableObject {
     private var deckLinkCapture: UnsafeMutableRawPointer?
     private var deckLinkFrames: Task<Void, Never>?
     private var deckLinkSampleFormat: CMVideoFormatDescription?
+    private var usbWatchdog: Task<Void, Never>?
+    private var lastUSBFrame: ContinuousClock.Instant?
+    private var acceptingUSBFrames = false
     private var lastDeckLinkFrame: ContinuousClock.Instant?
-    var onDeckLinkSignalLost: (() -> Void)?
+    var onSignalLost: (() -> Void)?
     private let sessionQueue = DispatchQueue(label: "ptz.camera.session")
     private let videoOutput = AVCaptureVideoDataOutput()
     private var frameHandler: ((CVPixelBuffer, CMTime) -> Void)?
@@ -89,6 +92,7 @@ final class CameraCaptureService: NSObject, ObservableObject {
     }
 
     func start(deviceID: String?) {
+        watchUSBInput()
         stopDeckLink()
         errorMessage = nil
         receivedVideoFrame = false
@@ -172,7 +176,34 @@ final class CameraCaptureService: NSObject, ObservableObject {
         }
     }
 
+    private func endUSBInput() {
+        acceptingUSBFrames = false
+        usbWatchdog?.cancel()
+        usbWatchdog = nil
+        if lastUSBFrame != nil { onSignalLost?() }
+        lastUSBFrame = nil
+        receivedVideoFrame = false
+    }
+
+    private func watchUSBInput() {
+        endUSBInput()
+        acceptingUSBFrames = true
+        usbWatchdog = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(100))
+                guard !Task.isCancelled, let self else { return }
+                if let lastUSBFrame, ContinuousClock.now - lastUSBFrame > .milliseconds(500) {
+                    self.errorMessage = "Tracking stopped because video input was lost."
+                    self.lastUSBFrame = nil
+                    self.receivedVideoFrame = false
+                    self.onSignalLost?()
+                }
+            }
+        }
+    }
+
     func stop() {
+        endUSBInput()
         stopDeckLink()
         sessionQueue.async { [weak self] in
             self?.session.stopRunning()
@@ -183,6 +214,7 @@ final class CameraCaptureService: NSObject, ObservableObject {
     }
 
     private func startDeckLink() {
+        endUSBInput()
         stopDeckLink()
         authorizationDenied = false
         errorMessage = nil
@@ -229,7 +261,7 @@ final class CameraCaptureService: NSObject, ObservableObject {
         usingDeckLink = false
         receivedVideoFrame = false
         deckLinkPreview.sampleBufferRenderer.flush(removingDisplayedImage: true, completionHandler: nil)
-        onDeckLinkSignalLost?()
+        onSignalLost?()
     }
 
     private func readDeckLinkFrame() {
@@ -237,10 +269,11 @@ final class CameraCaptureService: NSObject, ObservableObject {
         let now = ContinuousClock.now
         guard let frame = PTZDeckLinkCopyFrame(capture) else {
             if let lastDeckLinkFrame, now - lastDeckLinkFrame > .milliseconds(500) {
+                errorMessage = "Tracking stopped because video input was lost."
                 self.lastDeckLinkFrame = nil
                 receivedVideoFrame = false
                 deckLinkPreview.sampleBufferRenderer.flush(removingDisplayedImage: true, completionHandler: nil)
-                onDeckLinkSignalLost?()
+                onSignalLost?()
             }
             return
         }
@@ -306,7 +339,8 @@ extension CameraCaptureService: AVCaptureVideoDataOutputSampleBufferDelegate {
         let time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         // Handler runs on the video output queue (background).
         Task { @MainActor in
-            guard !self.usingDeckLink else { return }
+            guard self.acceptingUSBFrames, !self.usingDeckLink else { return }
+            self.lastUSBFrame = .now
             if !self.receivedVideoFrame { self.receivedVideoFrame = true }
             self.frameHandler?(pixelBuffer, time)
         }

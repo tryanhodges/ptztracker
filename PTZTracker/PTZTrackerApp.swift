@@ -10,6 +10,7 @@ struct PTZTrackerApp: App {
                 .environmentObject(model.settings)
                 .environmentObject(model.camera)
                 .environmentObject(model.controller)
+                .environmentObject(model.controller.rehearsal)
                 .task {
                     await model.controller.start()
                 }

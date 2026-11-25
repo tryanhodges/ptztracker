@@ -37,7 +37,7 @@ struct SpeedCurve: Codable, Equatable {
             && anchors.map(\.point.x) == [0, 0.25, 0.5, 0.75, 1]
             && nodes.allSatisfy {
                 (0...1).contains($0.point.x) && (0...1).contains($0.point.y)
-                    && (0...0.5).contains($0.incoming.x) && (0...0.5).contains($0.outgoing.x)
+                    && (0...1).contains($0.incoming.x) && (0...1).contains($0.outgoing.x)
                     && (0...1).contains($0.incoming.y) && (0...1).contains($0.outgoing.y)
             }
     }
@@ -78,6 +78,30 @@ struct SpeedCurve: Codable, Equatable {
         nodes[index].outgoing.y = min(1, max(0, node.outgoing.y + delta))
     }
 
+    mutating func split(after index: Int) -> UUID? {
+        let a = nodes[index].point
+        let b = self.handle(at: index, incoming: false)
+        let c = self.handle(at: index + 1, incoming: true)
+        let d = nodes[index + 1].point
+        func mid(_ p: Point, _ q: Point) -> Point {
+            Point(x: (p.x + q.x) / 2, y: (p.y + q.y) / 2)
+        }
+        let ab = mid(a, b), bc = mid(b, c), cd = mid(c, d)
+        let left = mid(ab, bc), right = mid(bc, cd)
+        let center = mid(left, right)
+        func handle(_ p: Point, from origin: Point, span: Double) -> Point {
+            Point(x: abs(p.x - origin.x) / span, y: p.y)
+        }
+        let leftSpan = center.x - a.x, rightSpan = d.x - center.x
+        guard min(leftSpan, rightSpan) >= 0.004 else { return nil }
+        nodes[index].outgoing = handle(ab, from: a, span: leftSpan)
+        nodes[index + 1].incoming = handle(cd, from: d, span: rightSpan)
+        let node = Node(point: center, incoming: handle(left, from: center, span: leftSpan),
+                        outgoing: handle(right, from: center, span: rightSpan))
+        nodes.insert(node, at: index + 1)
+        return node.id
+    }
+
     func speed(at x: Double) -> Double {
         guard x > 0 else { return nodes[0].point.y }
         guard let right = nodes.firstIndex(where: { $0.point.x >= x }) else {
@@ -85,8 +109,8 @@ struct SpeedCurve: Codable, Equatable {
         }
         if nodes[right].point.x == x { return nodes[right].point.y }
         let a = nodes[right - 1].point
-        let b = handle(at: right - 1, incoming: false)
-        let c = handle(at: right, incoming: true)
+        let b = self.handle(at: right - 1, incoming: false)
+        let c = self.handle(at: right, incoming: true)
         let d = nodes[right].point
         var low = 0.0
         var high = 1.0
@@ -110,12 +134,14 @@ struct TrackingSpeedProfile: Codable, Equatable {
 }
 
 struct CurveAxisTracking {
+    private(set) var displayPoint: SpeedCurve.Point?
     private var direction = 0.0
     private var previousDistance: Double?
     private var returning = false
     private var returnBlend = 0.0
     private var lastSpeed = 0.0
     private var reentryOffset = 0.0
+    private var commandSpeed = 0.0
 
     mutating func command(error: Double, anchor: Double, halfBox: Double, drift: Double,
                           elapsed: Double, curve: SpeedCurve) -> Double {
@@ -132,11 +158,14 @@ struct CurveAxisTracking {
             // Ease through the crosshair. Release the axis once this correction settles.
             lastSpeed = max(0, lastSpeed - 1.8 * step)
             let command = direction * lastSpeed
-            if lastSpeed < 0.02 { self = Self(); return 0 }
-            return command
+            commandSpeed = Self.ease(current: commandSpeed, desired: command, elapsed: step)
+            if abs(commandSpeed) < 0.02 { self = Self(); return 0 }
+            displayPoint = .init(x: 1, y: abs(commandSpeed))
+            return commandSpeed
         }
 
         let isOutside = distance >= halfBox
+        let position: Double
         let speed: Double
         if isOutside {
             if drift * direction < -0.025 { returning = true }
@@ -147,11 +176,13 @@ struct CurveAxisTracking {
             let fraction = min(1, max(0, (distance - halfBox) / max(0.001, pictureEdge - halfBox)))
             let outbound = curve.speed(at: 0.25 * fraction)
             let inbound = curve.speed(at: 0.5 - 0.25 * fraction)
+            position = 0.25 * fraction + (0.5 - 0.5 * fraction) * returnBlend
             speed = outbound + (inbound - outbound) * returnBlend
             reentryOffset = 0
         } else {
             let progress = 1 - distance / halfBox
-            let desired = curve.speed(at: 0.5 + 0.5 * progress)
+            position = 0.5 + 0.5 * progress
+            let desired = curve.speed(at: position)
             if let previousDistance, previousDistance >= halfBox {
                 reentryOffset = lastSpeed - desired
             }
@@ -160,6 +191,27 @@ struct CurveAxisTracking {
         }
         previousDistance = distance
         lastSpeed = speed
-        return direction * speed
+
+        // Keep the curve as the desired speed envelope, then apply Basic's
+        // drift lookahead and gradual deceleration to the resulting command.
+        let remaining = max(0, distance - halfBox)
+        let outwardDrift = drift * direction
+        let driftAdjustment = min(0.30, max(-remaining * 0.5, outwardDrift * 0.45))
+        let adjustedSpeed = min(1, max(0, speed + driftAdjustment))
+        let desiredCommand = direction * adjustedSpeed
+        commandSpeed = Self.ease(current: commandSpeed, desired: desiredCommand, elapsed: step)
+
+        let shownSpeed = min(1, max(0, abs(commandSpeed)))
+        displayPoint = .init(x: position, y: shownSpeed)
+        return commandSpeed
+    }
+
+    private static func ease(current: Double, desired: Double, elapsed: Double) -> Double {
+        let sameDirection = current * desired >= 0
+        if sameDirection, abs(desired) >= abs(current) { return desired }
+        let goal = sameDirection ? abs(desired) : 0
+        let magnitude = max(goal, abs(current) - 1.08 * max(0, elapsed))
+        guard magnitude >= 0.02 else { return 0 }
+        return current >= 0 ? magnitude : -magnitude
     }
 }
