@@ -12,6 +12,7 @@
 		A10000000000000000000002 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* AppModel.swift */; };
 		A10000000000000000000003 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* ContentView.swift */; };
 		A10000000000000000000004 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* AppSettings.swift */; };
+		A10000000000000000000015 /* TrackingSpeedProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* TrackingSpeedProfile.swift */; };
 		A10000000000000000000005 /* TrackingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* TrackingState.swift */; };
 		A10000000000000000000006 /* ViscaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* ViscaClient.swift */; };
 		A10000000000000000000007 /* CameraCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* CameraCaptureService.swift */; };
@@ -20,6 +21,7 @@
 		A1000000000000000000000A /* CompanionHTTPServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000A /* CompanionHTTPServer.swift */; };
 		A1000000000000000000000B /* VideoPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000B /* VideoPreviewView.swift */; };
 		A1000000000000000000000C /* ControlPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000C /* ControlPanelView.swift */; };
+		A10000000000000000000016 /* SpeedCurveEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* SpeedCurveEditor.swift */; };
 		A1000000000000000000000D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000D /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -30,6 +32,7 @@
 		A20000000000000000000002 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		A20000000000000000000003 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A20000000000000000000004 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
+		A20000000000000000000015 /* TrackingSpeedProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackingSpeedProfile.swift; sourceTree = "<group>"; };
 		A20000000000000000000005 /* TrackingState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackingState.swift; sourceTree = "<group>"; };
 		A20000000000000000000006 /* ViscaClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViscaClient.swift; sourceTree = "<group>"; };
 		A20000000000000000000007 /* CameraCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCaptureService.swift; sourceTree = "<group>"; };
@@ -38,6 +41,7 @@
 		A2000000000000000000000A /* CompanionHTTPServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionHTTPServer.swift; sourceTree = "<group>"; };
 		A2000000000000000000000B /* VideoPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPreviewView.swift; sourceTree = "<group>"; };
 		A2000000000000000000000C /* ControlPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlPanelView.swift; sourceTree = "<group>"; };
+		A20000000000000000000016 /* SpeedCurveEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeedCurveEditor.swift; sourceTree = "<group>"; };
 		A2000000000000000000000D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A2000000000000000000000E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A2000000000000000000000F /* PTZTracker.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PTZTracker.entitlements; sourceTree = "<group>"; };
@@ -91,6 +95,7 @@
 			isa = PBXGroup;
 			children = (
 				A20000000000000000000004 /* AppSettings.swift */,
+				A20000000000000000000015 /* TrackingSpeedProfile.swift */,
 				A20000000000000000000005 /* TrackingState.swift */,
 			);
 			path = Models;
@@ -115,6 +120,7 @@
 			children = (
 				A2000000000000000000000B /* VideoPreviewView.swift */,
 				A2000000000000000000000C /* ControlPanelView.swift */,
+				A20000000000000000000016 /* SpeedCurveEditor.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -192,6 +198,7 @@
 				A10000000000000000000002 /* AppModel.swift in Sources */,
 				A10000000000000000000003 /* ContentView.swift in Sources */,
 				A10000000000000000000004 /* AppSettings.swift in Sources */,
+				A10000000000000000000015 /* TrackingSpeedProfile.swift in Sources */,
 				A10000000000000000000005 /* TrackingState.swift in Sources */,
 				A10000000000000000000006 /* ViscaClient.swift in Sources */,
 				A10000000000000000000007 /* CameraCaptureService.swift in Sources */,
@@ -201,6 +208,7 @@
 				A1000000000000000000000A /* CompanionHTTPServer.swift in Sources */,
 				A1000000000000000000000B /* VideoPreviewView.swift in Sources */,
 				A1000000000000000000000C /* ControlPanelView.swift in Sources */,
+				A10000000000000000000016 /* SpeedCurveEditor.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

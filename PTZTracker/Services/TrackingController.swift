@@ -19,6 +19,7 @@ final class TrackingController: ObservableObject {
         }
     }
 
+    @Published var showingSpeedCurveEditor = false
     @Published var controlPanelTab: ControlPanelTab = .tracking
     @Published private(set) var currentTarget: TrackedTarget?
     @Published private(set) var manualTargetSelection = false
@@ -78,6 +79,9 @@ final class TrackingController: ObservableObject {
     private var lastTargetSample: (center: CGPoint, time: TimeInterval)?
     private var targetVelocity = CGVector.zero
     private var driveSpeed = CGVector.zero
+    private var panCurveTracking = CurveAxisTracking()
+    private var tiltCurveTracking = CurveAxisTracking()
+    private var lastSpeedMode: TrackingSpeedMode?
 
     init(settings: AppSettings, camera: CameraCaptureService) {
         self.settings = settings
@@ -137,6 +141,8 @@ final class TrackingController: ObservableObject {
         lastTargetSample = nil
         targetVelocity = .zero
         driveSpeed = .zero
+        panCurveTracking = CurveAxisTracking()
+        tiltCurveTracking = CurveAxisTracking()
     }
 
     private func resetTargetLoss() {
@@ -252,22 +258,49 @@ final class TrackingController: ObservableObject {
             hasTrackedSubject = true
             subjectLostAt = nil
             centerReturnMessage = nil
+            let speedMode = settings.trackingSpeedMode
+            if speedMode != lastSpeedMode {
+                resetTargetMotion()
+                lastSpeedMode = speedMode
+            }
             let elapsed = lastTargetSample.map { frameTime - $0.time } ?? minInterval
-            if elapsed > 0.35 { driveSpeed = .zero }
+            if elapsed > 0.35 {
+                driveSpeed = .zero
+                panCurveTracking = CurveAxisTracking()
+                tiltCurveTracking = CurveAxisTracking()
+            }
             updateTargetVelocity(center: target.center, frameTime: frameTime)
-            motion = Self.computeMotion(
-                for: target,
-                framingPoint: settings.framingPoint,
-                deadZoneWidth: settings.deadZoneWidth,
-                deadZoneHeight: settings.deadZoneHeight,
-                reactionSpeed: settings.reactionSpeed,
-                invertPan: settings.invertPan,
-                invertTilt: settings.invertTilt,
-                velocity: targetVelocity,
-                elapsed: elapsed,
-                driveSpeed: &driveSpeed,
-                recentering: &recentering
-            )
+            if let slot = speedMode.slot {
+                let profile = settings.trackingSpeedProfiles[slot]
+                let anchor = settings.framingPoint
+                let interval = min(elapsed, 0.1)
+                let pan = panCurveTracking.command(
+                    error: target.center.x - anchor.x, anchor: anchor.x,
+                    halfBox: settings.deadZoneWidth / 2, drift: targetVelocity.dx,
+                    elapsed: interval, curve: profile.pan
+                )
+                let tilt = tiltCurveTracking.command(
+                    error: target.center.y - (1 - anchor.y), anchor: 1 - anchor.y,
+                    halfBox: settings.deadZoneHeight / 2, drift: targetVelocity.dy,
+                    elapsed: interval, curve: profile.tilt
+                )
+                motion = Self.motion(pan: (pan * 0x18).rounded(), tilt: (tilt * 0x14).rounded(),
+                                     invertPan: settings.invertPan, invertTilt: settings.invertTilt)
+            } else {
+                motion = Self.computeMotion(
+                    for: target,
+                    framingPoint: settings.framingPoint,
+                    deadZoneWidth: settings.deadZoneWidth,
+                    deadZoneHeight: settings.deadZoneHeight,
+                    reactionSpeed: settings.reactionSpeed,
+                    invertPan: settings.invertPan,
+                    invertTilt: settings.invertTilt,
+                    velocity: targetVelocity,
+                    elapsed: elapsed,
+                    driveSpeed: &driveSpeed,
+                    recentering: &recentering
+                )
+            }
         } else {
             resetTargetMotion()
             motion = .idle
@@ -372,8 +405,15 @@ final class TrackingController: ObservableObject {
             return .idle
         }
 
-        let pan = invertPan ? -driveSpeed.dx : driveSpeed.dx
-        let tilt = invertTilt ? -driveSpeed.dy : driveSpeed.dy
+        return motion(pan: driveSpeed.dx, tilt: driveSpeed.dy, invertPan: invertPan, invertTilt: invertTilt)
+    }
+
+    private nonisolated static func motion(
+        pan panCommand: Double, tilt tiltCommand: Double, invertPan: Bool, invertTilt: Bool
+    ) -> PTZMotion {
+        let pan = invertPan ? -panCommand : panCommand
+        let tilt = invertTilt ? -tiltCommand : tiltCommand
+        guard pan != 0 || tilt != 0 else { return .idle }
         return .moving(
             pan: pan == 0 ? .stop : (pan > 0 ? .right : .left),
             tilt: tilt == 0 ? .stop : (tilt > 0 ? .up : .down),
@@ -468,6 +508,9 @@ final class TrackingController: ObservableObject {
         case .toggle:
             trackingEnabled.toggle()
             return .init(status: 200, body: statusJSON(), contentType: "application/json")
+        case let .speedMode(mode):
+            settings.trackingSpeedMode = mode
+            return .init(status: 200, body: statusJSON(), contentType: "application/json")
         case let .preset(slot, operation):
             return await sendPreset(slot, operation: operation)
         }
@@ -507,7 +550,7 @@ final class TrackingController: ObservableObject {
         let viscaOK = connection.viscaConnected
         let hasTarget = currentTarget != nil
         return """
-        {"tracking":\(tracking),"viscaConnected":\(viscaOK),"hasTarget":\(hasTarget),"camera":"\(settings.cameraIP):\(settings.cameraPort)"}
+        {"tracking":\(tracking),"viscaConnected":\(viscaOK),"hasTarget":\(hasTarget),"speedMode":"\(settings.trackingSpeedMode.rawValue)","camera":"\(settings.cameraIP):\(settings.cameraPort)"}
         """
     }
 

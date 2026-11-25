@@ -54,6 +54,9 @@ struct ControlPanelView: View {
         }
         .frame(minWidth: 300, idealWidth: 340, maxWidth: 380)
         .background(Color(nsColor: .controlBackgroundColor))
+        .sheet(isPresented: $controller.showingSpeedCurveEditor) {
+            SpeedCurveEditor(settings: settings, initialSlot: settings.trackingSpeedMode.slot ?? 0)
+        }
     }
 
     private var ignoreZonesSection: some View {
@@ -328,24 +331,37 @@ struct ControlPanelView: View {
             Text("Response")
                 .font(.headline)
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text("Reaction speed")
-                    Spacer()
-                    Text(settings.reactionSpeed, format: .number.precision(.fractionLength(2)))
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
+            Picker("Speed control", selection: $settings.trackingSpeedMode) {
+                ForEach(TrackingSpeedMode.allCases) { mode in
+                    let name = mode.slot.map { settings.trackingSpeedProfiles[$0].name }
+                    Text(name.map { "Advanced \(mode.rawValue) · \($0)" } ?? mode.title).tag(mode)
                 }
-                Slider(value: $settings.reactionSpeed, in: 0.1...1.0)
-                Text("Higher values make the head pan and tilt faster during a correction.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+            }
+            Button("Edit Speed Curves…") { controller.showingSpeedCurveEditor = true }
+
+            if settings.trackingSpeedMode == .basic {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Reaction speed")
+                        Spacer()
+                        Text(settings.reactionSpeed, format: .number.precision(.fractionLength(2)))
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                    Slider(value: $settings.reactionSpeed, in: 0.1...1.0)
+                    Text("Higher values make the head pan and tilt faster during a correction.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
             }
 
             VStack(alignment: .leading, spacing: 8) {
                 deadZoneSlider("Dead zone width", value: $settings.deadZoneWidth)
                 deadZoneSlider("Dead zone height", value: $settings.deadZoneHeight)
-                Text("The dashed box sets when the head starts moving. A subject moving toward its edge can trigger a correction slightly early.")
+                Text(settings.trackingSpeedMode == .basic
+                     ? "The dashed box sets when the head starts moving. A subject moving toward its edge can trigger a correction slightly early."
+                     : "Each axis uses its curve when the subject reaches the corresponding edge of the dashed box.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }

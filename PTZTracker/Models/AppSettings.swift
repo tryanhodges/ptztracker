@@ -20,6 +20,18 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(reactionSpeed, forKey: Keys.reactionSpeed) }
     }
 
+    @Published var trackingSpeedMode: TrackingSpeedMode {
+        didSet { defaults.set(trackingSpeedMode.rawValue, forKey: Keys.trackingSpeedMode) }
+    }
+
+    @Published var trackingSpeedProfiles: [TrackingSpeedProfile] {
+        didSet {
+            if let data = try? JSONEncoder().encode(trackingSpeedProfiles) {
+                defaults.set(data, forKey: Keys.trackingSpeedProfiles)
+            }
+        }
+    }
+
     static let centerReturnDelayRange = 0...120
 
     @Published var centerReturnDelay: Int {
@@ -128,6 +140,8 @@ final class AppSettings: ObservableObject {
         static let savedPresetSlotsByHead = "savedPresetSlotsByHead"
         static let cameraPort = "cameraPort"
         static let deviceAddress = "deviceAddress"
+        static let trackingSpeedMode = "trackingSpeedMode"
+        static let trackingSpeedProfiles = "trackingSpeedProfiles"
         static let reactionSpeed = "reactionSpeed"
         static let centerReturnDelay = "centerReturnDelay"
         static let legacyBufferZone = "bufferZone"
@@ -157,6 +171,15 @@ final class AppSettings: ObservableObject {
         cameraPort = port ?? 5002
         let addr = d.object(forKey: Keys.deviceAddress) as? Int
         deviceAddress = addr ?? 1
+        trackingSpeedMode = d.string(forKey: Keys.trackingSpeedMode)
+            .flatMap(TrackingSpeedMode.init(rawValue:)) ?? .basic
+        let profiles = d.data(forKey: Keys.trackingSpeedProfiles)
+            .flatMap { try? JSONDecoder().decode([TrackingSpeedProfile].self, from: $0) }
+        if let profiles, profiles.count == 3, profiles.allSatisfy({ $0.pan.isValid && $0.tilt.isValid }) {
+            trackingSpeedProfiles = profiles
+        } else {
+            trackingSpeedProfiles = (1...3).map { TrackingSpeedProfile(name: "Preset \($0)") }
+        }
         let speed = d.object(forKey: Keys.reactionSpeed) as? Double
         reactionSpeed = speed ?? 0.55
         let delay = d.integer(forKey: Keys.centerReturnDelay)

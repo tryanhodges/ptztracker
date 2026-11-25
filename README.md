@@ -106,3 +106,20 @@ PTZTracker/
   Views/      # preview + controls
   Models/
 ```
+
+## Advanced speed curves
+
+In **Tracking → Response**, choose **Basic** to use the reaction speed slider and the default tracking behavior. Choose **Advanced 1**, **2**, or **3** to activate a saved curve preset. **Edit Speed Curves…** opens the editor. Select a preset, name it for its zoom position, and edit its **Pan** and **Tilt** curves independently. Changes save automatically. Select a node to adjust its two Bézier handles independently. You can add or remove intermediate nodes. The tracking markers stay at fixed horizontal positions. Use **Copy Pan to Tilt** or **Copy Tilt to Pan** to replace the other axis’s curve in the same preset. The copies can be edited independently.
+
+The curve reads left to right from **Box Exit** to **Box Re-entry**, **Halfway**, and **Centered**. In the outside-box section, **Picture Edge** marks the farthest visible point on either side of the framing box. When the subject changes direction outside the box, the tracker blends between the outbound and inbound parts of the curve. Each axis uses its own distance and speed. A high **Centered** value carries movement past the crosshair before easing down. Target loss still stops tracking movement immediately and follows your Return to Center setting.
+
+In the existing Companion Generic HTTP connection, add a **POST** with an empty body to select the matching speed profile alongside your zoom action:
+
+| Selection | URI |
+| --- | --- |
+| Basic | `tracking/speed/basic` |
+| Advanced 1 | `tracking/speed/1` |
+| Advanced 2 | `tracking/speed/2` |
+| Advanced 3 | `tracking/speed/3` |
+
+`GET /status` reports `speedMode` as `"basic"`, `"1"`, `"2"`, or `"3"`.

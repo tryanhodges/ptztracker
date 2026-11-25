@@ -14,6 +14,7 @@ final class CompanionHTTPServer {
         case off
         case toggle
         case preset(UInt8, PresetOperation)
+        case speedMode(TrackingSpeedMode)
     }
 
     struct Response {
@@ -111,7 +112,14 @@ final class CompanionHTTPServer {
             action = .toggle
         default:
             let segments = route.split(separator: "/")
-            if segments.count == 3, segments[0] == "presets",
+            if segments.count == 3, segments[0] == "tracking", segments[1] == "speed",
+               let mode = TrackingSpeedMode(rawValue: String(segments[2])) {
+                guard method == "POST" else {
+                    send(Response(status: 405, body: "Use POST to select a tracking speed mode."), on: connection)
+                    return
+                }
+                action = .speedMode(mode)
+            } else if segments.count == 3, segments[0] == "presets",
                let slot = UInt8(segments[1]), (1...5).contains(slot),
                let operation = PresetOperation(rawValue: String(segments[2])) {
                 guard method == "POST" else {
@@ -131,6 +139,7 @@ final class CompanionHTTPServer {
             GET /tracking/on
             GET /tracking/off
             GET /tracking/toggle
+            POST /tracking/speed/{basic,1,2,3}
             POST /presets/{1-5}/save
             POST /presets/{1-5}/recall
             """
